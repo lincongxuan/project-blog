@@ -1,0 +1,30 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="搜索" description="搜索博客文章和项目。">
+  <div class="container narrow page-header"><p class="eyebrow">Find something</p><h1>搜索</h1><p>搜索文章和项目中的关键词。</p></div>
+  <div class="container narrow search-box">
+    <label class="sr-only" for="search-input">搜索关键词</label>
+    <input id="search-input" type="search" placeholder="输入关键词…" autocomplete="off" />
+    <div id="search-results" class="search-results"><p class="muted">输入关键词开始搜索。</p></div>
+  </div>
+</BaseLayout>
+
+<script is:inline>
+  const input = document.querySelector('#search-input');
+  const results = document.querySelector('#search-results');
+  let pagefind;
+  async function loadPagefind() {
+    try { pagefind = await import('/pagefind/pagefind.js'); }
+    catch { results.innerHTML = '<p class="muted">搜索索引尚未生成，请先运行生产构建。</p>'; }
+  }
+  loadPagefind();
+  input?.addEventListener('input', async (event) => {
+    const query = event.target.value.trim();
+    if (!query || !pagefind) { results.innerHTML = '<p class="muted">输入关键词开始搜索。</p>'; return; }
+    const search = await pagefind.search(query);
+    const items = await Promise.all(search.results.slice(0, 12).map((item) => item.data()));
+    results.innerHTML = items.length ? items.map((item) => `<article class="search-result"><a href="${item.url}"><h2>${item.meta.title || '未命名'}</h2><p>${item.excerpt}</p></a></article>`).join('') : '<p class="muted">没有找到相关内容。</p>';
+  });
+</script>

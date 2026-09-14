@@ -1,0 +1,675 @@
+<dialog class="media-viewer" id="media-viewer" aria-labelledby="media-viewer-title">
+  <div class="media-viewer-shell">
+    <header class="media-viewer-toolbar">
+      <div class="media-viewer-heading">
+        <p id="media-viewer-title">图片预览</p>
+        <output class="media-viewer-zoom" data-media-zoom aria-live="polite">
+          100%
+        </output>
+      </div>
+      <div class="media-viewer-controls" aria-label="图片查看工具">
+        <button type="button" data-media-action="zoom-out" aria-label="缩小" title="缩小">
+          −
+        </button>
+        <button type="button" data-media-action="zoom-in" aria-label="放大" title="放大">
+          +
+        </button>
+        <button
+          type="button"
+          data-media-action="reset"
+          aria-label="恢复适合窗口的大小"
+          title="恢复适合窗口的大小"
+        >
+          1:1
+        </button>
+        <button type="button" data-media-action="close" aria-label="关闭图片预览" title="关闭">
+          ×
+        </button>
+      </div>
+    </header>
+    <div class="media-viewer-viewport" data-media-viewport>
+      <div class="media-viewer-content" data-media-content></div>
+    </div>
+  </div>
+</dialog>
+
+<script>
+  const dialog = document.querySelector<HTMLDialogElement>('#media-viewer');
+  const viewport = dialog?.querySelector<HTMLElement>('[data-media-viewport]');
+  const content = dialog?.querySelector<HTMLElement>('[data-media-content]');
+  const title = dialog?.querySelector<HTMLElement>('#media-viewer-title');
+  const zoomReadout = dialog?.querySelector<HTMLOutputElement>('[data-media-zoom]');
+
+  if (dialog && viewport && content && title && zoomReadout) {
+    const MIN_SCALE = 0.5;
+    const MAX_SCALE = 6;
+    const pointers = new Map<number, { x: number; y: number }>();
+    let scale = 1;
+    let offsetX = 0;
+    let offsetY = 0;
+    let baseWidth = 0;
+    let baseHeight = 0;
+    let dragOrigin:
+      { pointerX: number; pointerY: number; offsetX: number; offsetY: number } | undefined;
+    let pinchOrigin:
+      | {
+          distance: number;
+          scale: number;
+          midpointX: number;
+          midpointY: number;
+          offsetX: number;
+          offsetY: number;
+        }
+      | undefined;
+    let activeTrigger: HTMLElement | undefined;
+    let intrinsicWidth = 0;
+    let intrinsicHeight = 0;
+    let allowFitUpscale = false;
+
+    const DIAGRAM_SVG_STYLES = `
+      text, .label, .nodeLabel, .edgeLabel, .messageText, .loopText, .noteText,
+      .cluster-label text, .cluster-label span {
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif !important;
+        fill: var(--diagram-text, #172033) !important;
+        color: var(--diagram-text, #172033) !important;
+      }
+      .node > rect, .node > polygon, .node > circle, .node > ellipse, .node > path {
+        fill: var(--diagram-blue-fill, #eaf2ff) !important;
+        stroke: var(--diagram-blue-stroke, #356ae6) !important;
+        stroke-width: 1.5px !important;
+      }
+      .node > rect {
+        rx: 7px !important;
+        ry: 7px !important;
+      }
+      .diagram-node--data > rect, .diagram-node--data > polygon, .diagram-node--data > circle,
+      .diagram-node--data > ellipse, .diagram-node--data > path,
+      .diagram-node--success > rect, .diagram-node--success > polygon, .diagram-node--success > circle,
+      .diagram-node--success > ellipse, .diagram-node--success > path {
+        fill: var(--diagram-green-fill, #eaf8f1) !important;
+        stroke: var(--diagram-green-stroke, #159570) !important;
+      }
+      .diagram-node--decision > rect, .diagram-node--decision > polygon, .diagram-node--decision > circle,
+      .diagram-node--decision > ellipse, .diagram-node--decision > path,
+      .diagram-node--warning > rect, .diagram-node--warning > polygon, .diagram-node--warning > circle,
+      .diagram-node--warning > ellipse, .diagram-node--warning > path {
+        fill: var(--diagram-amber-fill, #fff4dd) !important;
+        stroke: var(--diagram-amber-stroke, #d28a16) !important;
+      }
+      .diagram-node--danger > rect, .diagram-node--danger > polygon, .diagram-node--danger > circle,
+      .diagram-node--danger > ellipse, .diagram-node--danger > path {
+        fill: var(--diagram-red-fill, #fdecec) !important;
+        stroke: var(--diagram-red-stroke, #c94b4b) !important;
+      }
+      .diagram-tone--purple > rect, .diagram-tone--purple > polygon, .diagram-tone--purple > circle,
+      .diagram-tone--purple > ellipse, .diagram-tone--purple > path {
+        fill: var(--diagram-purple-fill, #f1ebff) !important;
+        stroke: var(--diagram-purple-stroke, #7653c9) !important;
+      }
+      .diagram-node--terminal > rect {
+        rx: 999px !important;
+        ry: 999px !important;
+      }
+      .cluster > rect, .cluster rect {
+        fill: var(--diagram-neutral-fill, #f6f9fd) !important;
+        stroke: var(--diagram-neutral-stroke, #b9c8da) !important;
+        stroke-width: 1.4px !important;
+        rx: 8px !important;
+        ry: 8px !important;
+      }
+      .diagram-cluster--blue > rect, .diagram-cluster--blue rect {
+        fill: var(--diagram-blue-fill, #eaf2ff) !important;
+        stroke: var(--diagram-blue-stroke, #356ae6) !important;
+      }
+      .diagram-cluster--green > rect, .diagram-cluster--green rect {
+        fill: var(--diagram-green-fill, #eaf8f1) !important;
+        stroke: var(--diagram-green-stroke, #159570) !important;
+      }
+      .diagram-cluster--amber > rect, .diagram-cluster--amber rect {
+        fill: var(--diagram-amber-fill, #fff4dd) !important;
+        stroke: var(--diagram-amber-stroke, #d28a16) !important;
+      }
+      .edgePath .path, .flowchart-link, .messageLine0, .messageLine1, .transition {
+        stroke: var(--diagram-line, #6f7c91) !important;
+        stroke-width: 1.6px !important;
+      }
+      marker path, .arrowheadPath { fill: var(--diagram-line, #6f7c91) !important; stroke: var(--diagram-line, #6f7c91) !important; }
+      .edgeLabel rect, .labelBkg { fill: var(--diagram-canvas, #fcfdff) !important; opacity: .96 !important; }
+      .actor, .labelBox { fill: var(--diagram-blue-fill, #eaf2ff) !important; stroke: var(--diagram-blue-stroke, #356ae6) !important; }
+      .actor-line { stroke: var(--diagram-neutral-stroke, #b9c8da) !important; stroke-dasharray: 4 5; }
+      .note { fill: var(--diagram-amber-fill, #fff4dd) !important; stroke: var(--diagram-amber-stroke, #d28a16) !important; }
+      .activation0, .activation1, .activation2 { fill: var(--diagram-green-fill, #eaf8f1) !important; stroke: var(--diagram-green-stroke, #159570) !important; }
+    `;
+
+    const clamp = (value: number, minimum: number, maximum: number) =>
+      Math.min(maximum, Math.max(minimum, value));
+
+    const measureMedia = () => {
+      const media = content.firstElementChild;
+      if (!media) return;
+      const rect = media.getBoundingClientRect();
+      baseWidth = rect.width / scale;
+      baseHeight = rect.height / scale;
+    };
+
+    const constrainOffsets = () => {
+      if (!baseWidth || !baseHeight) return;
+      const maxX = Math.max(0, (baseWidth * scale - viewport.clientWidth) / 2);
+      const maxY = Math.max(0, (baseHeight * scale - viewport.clientHeight) / 2);
+      offsetX = clamp(offsetX, -maxX, maxX);
+      offsetY = clamp(offsetY, -maxY, maxY);
+    };
+
+    const renderTransform = () => {
+      constrainOffsets();
+      const media = content.querySelector<HTMLElement>('.media-viewer-media');
+      if (media && baseWidth && baseHeight) {
+        media.style.width = `${baseWidth * scale}px`;
+        media.style.height = `${baseHeight * scale}px`;
+      }
+      content.style.transform = `translate(-50%, -50%) translate3d(${offsetX}px, ${offsetY}px, 0)`;
+      zoomReadout.value = `${Math.round(scale * 100)}%`;
+    };
+
+    const resetView = () => {
+      scale = 1;
+      offsetX = 0;
+      offsetY = 0;
+      renderTransform();
+      requestAnimationFrame(() => {
+        measureMedia();
+        renderTransform();
+      });
+    };
+
+    const fitMediaToViewport = () => {
+      const media = content.querySelector<HTMLElement>('.media-viewer-media');
+      if (!media || !intrinsicWidth || !intrinsicHeight) return;
+      const availableWidth = Math.max(1, viewport.clientWidth - 48);
+      const availableHeight = Math.max(1, viewport.clientHeight - 48);
+      const fitLimit = allowFitUpscale ? Number.POSITIVE_INFINITY : 1;
+      const fit = Math.min(
+        fitLimit,
+        availableWidth / intrinsicWidth,
+        availableHeight / intrinsicHeight,
+      );
+      baseWidth = Math.max(1, intrinsicWidth * fit);
+      baseHeight = Math.max(1, intrinsicHeight * fit);
+      media.style.width = `${baseWidth}px`;
+      media.style.height = `${baseHeight}px`;
+      resetView();
+    };
+
+    const setScale = (nextScale: number, clientX?: number, clientY?: number) => {
+      const previousScale = scale;
+      const clampedScale = clamp(nextScale, MIN_SCALE, MAX_SCALE);
+      if (clampedScale === previousScale) return;
+
+      const viewportRect = viewport.getBoundingClientRect();
+      const focusX =
+        clientX === undefined ? 0 : clientX - viewportRect.left - viewportRect.width / 2;
+      const focusY =
+        clientY === undefined ? 0 : clientY - viewportRect.top - viewportRect.height / 2;
+      const ratio = clampedScale / previousScale;
+      offsetX = focusX - ratio * (focusX - offsetX);
+      offsetY = focusY - ratio * (focusY - offsetY);
+      scale = clampedScale;
+      renderTransform();
+    };
+
+    const findContextTitle = (element: Element) => {
+      const imageAlt = element instanceof HTMLImageElement ? element.alt.trim() : '';
+      const mediaBlock = element.closest('.mermaid-diagram, figure, p') || element;
+      let sibling = mediaBlock.previousElementSibling;
+      while (sibling) {
+        if (sibling.matches('h2, h3, h4')) return sibling.textContent?.trim() || '图片预览';
+        sibling = sibling.previousElementSibling;
+      }
+      return imageAlt && !/^image[-_\s]?\d+/i.test(imageAlt) ? imageAlt : '图片预览';
+    };
+
+    const createViewerMedia = (source: HTMLImageElement | SVGSVGElement, label: string) => {
+      if (source instanceof SVGSVGElement) {
+        const clone = source.cloneNode(true) as SVGSVGElement;
+        clone.classList.add('media-viewer-media', 'media-viewer-diagram');
+        clone.setAttribute('role', 'img');
+        clone.setAttribute('aria-label', label);
+        clone.setAttribute('draggable', 'false');
+        return clone;
+      }
+
+      const image = new Image();
+      image.className = 'media-viewer-media';
+      image.alt = label;
+      image.draggable = false;
+      image.src = source.currentSrc || source.src;
+      return image;
+    };
+
+    const openViewer = (
+      source: HTMLImageElement | SVGSVGElement,
+      label: string,
+      trigger: HTMLElement,
+    ) => {
+      activeTrigger = trigger;
+      title.textContent = label;
+      if (source instanceof SVGSVGElement) {
+        allowFitUpscale = true;
+        intrinsicWidth = source.viewBox.baseVal.width || source.getBoundingClientRect().width;
+        intrinsicHeight = source.viewBox.baseVal.height || source.getBoundingClientRect().height;
+      } else {
+        allowFitUpscale = false;
+        intrinsicWidth = source.naturalWidth || source.getBoundingClientRect().width;
+        intrinsicHeight = source.naturalHeight || source.getBoundingClientRect().height;
+      }
+      const media = createViewerMedia(source, label);
+      content.replaceChildren(media);
+      document.body.classList.add('media-viewer-open');
+      dialog.showModal();
+      fitMediaToViewport();
+      if (media instanceof HTMLImageElement && !media.complete) {
+        media.addEventListener('load', fitMediaToViewport, { once: true });
+      }
+    };
+
+    const closeViewer = () => dialog.close();
+
+    dialog
+      .querySelector('[data-media-action="zoom-out"]')
+      ?.addEventListener('click', () => setScale(scale / 1.25));
+    dialog
+      .querySelector('[data-media-action="zoom-in"]')
+      ?.addEventListener('click', () => setScale(scale * 1.25));
+    dialog.querySelector('[data-media-action="reset"]')?.addEventListener('click', resetView);
+    dialog.querySelector('[data-media-action="close"]')?.addEventListener('click', closeViewer);
+
+    dialog.addEventListener('close', () => {
+      document.body.classList.remove('media-viewer-open');
+      content.replaceChildren();
+      intrinsicWidth = 0;
+      intrinsicHeight = 0;
+      allowFitUpscale = false;
+      pointers.clear();
+      activeTrigger?.focus();
+      activeTrigger = undefined;
+    });
+
+    viewport.addEventListener(
+      'wheel',
+      (event) => {
+        event.preventDefault();
+        setScale(event.deltaY < 0 ? scale * 1.12 : scale / 1.12, event.clientX, event.clientY);
+      },
+      { passive: false },
+    );
+
+    const pointerMidpoint = () => {
+      const values = [...pointers.values()];
+      return { x: (values[0].x + values[1].x) / 2, y: (values[0].y + values[1].y) / 2 };
+    };
+
+    const pointerDistance = () => {
+      const values = [...pointers.values()];
+      return Math.hypot(values[0].x - values[1].x, values[0].y - values[1].y);
+    };
+
+    viewport.addEventListener('pointerdown', (event) => {
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
+      viewport.setPointerCapture(event.pointerId);
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      viewport.classList.add('is-dragging');
+
+      if (pointers.size === 1) {
+        dragOrigin = { pointerX: event.clientX, pointerY: event.clientY, offsetX, offsetY };
+        pinchOrigin = undefined;
+      } else if (pointers.size === 2) {
+        const midpoint = pointerMidpoint();
+        pinchOrigin = {
+          distance: pointerDistance(),
+          scale,
+          midpointX: midpoint.x,
+          midpointY: midpoint.y,
+          offsetX,
+          offsetY,
+        };
+      }
+    });
+
+    viewport.addEventListener('pointermove', (event) => {
+      if (!pointers.has(event.pointerId)) return;
+      pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+
+      if (pointers.size === 2 && pinchOrigin) {
+        const midpoint = pointerMidpoint();
+        const nextScale = clamp(
+          (pinchOrigin.scale * pointerDistance()) / pinchOrigin.distance,
+          MIN_SCALE,
+          MAX_SCALE,
+        );
+        const ratio = nextScale / pinchOrigin.scale;
+        const viewportRect = viewport.getBoundingClientRect();
+        const startX = pinchOrigin.midpointX - viewportRect.left - viewportRect.width / 2;
+        const startY = pinchOrigin.midpointY - viewportRect.top - viewportRect.height / 2;
+        const currentX = midpoint.x - viewportRect.left - viewportRect.width / 2;
+        const currentY = midpoint.y - viewportRect.top - viewportRect.height / 2;
+        scale = nextScale;
+        offsetX = currentX - ratio * (startX - pinchOrigin.offsetX);
+        offsetY = currentY - ratio * (startY - pinchOrigin.offsetY);
+        renderTransform();
+      } else if (pointers.size === 1 && dragOrigin) {
+        offsetX = dragOrigin.offsetX + event.clientX - dragOrigin.pointerX;
+        offsetY = dragOrigin.offsetY + event.clientY - dragOrigin.pointerY;
+        renderTransform();
+      }
+    });
+
+    const finishPointer = (event: PointerEvent) => {
+      pointers.delete(event.pointerId);
+      if (viewport.hasPointerCapture(event.pointerId))
+        viewport.releasePointerCapture(event.pointerId);
+      pinchOrigin = undefined;
+      const remaining = [...pointers.values()][0];
+      dragOrigin = remaining
+        ? { pointerX: remaining.x, pointerY: remaining.y, offsetX, offsetY }
+        : undefined;
+      if (!pointers.size) viewport.classList.remove('is-dragging');
+    };
+
+    viewport.addEventListener('pointerup', finishPointer);
+    viewport.addEventListener('pointercancel', finishPointer);
+    window.addEventListener('resize', fitMediaToViewport);
+
+    const createActionBar = (source: HTMLImageElement | SVGSVGElement, label: string) => {
+      const actionBar = document.createElement('div');
+      actionBar.className = 'media-actionbar';
+      const button = document.createElement('button');
+      button.className = 'media-open-button';
+      button.type = 'button';
+      button.innerHTML = '<span aria-hidden="true">⛶</span><span>查看大图</span>';
+      button.setAttribute('aria-label', `查看大图：${label}`);
+      button.addEventListener('click', () => openViewer(source, label, button));
+      actionBar.append(button);
+      return actionBar;
+    };
+
+    const makeSurfaceInteractive = (
+      surface: HTMLElement,
+      source: HTMLImageElement | SVGSVGElement,
+      label: string,
+    ) => {
+      surface.addEventListener('click', (event) => {
+        if (surface.dataset.zoomEnabled !== 'true') return;
+        event.preventDefault();
+        openViewer(source, label, surface);
+      });
+      surface.addEventListener('keydown', (event) => {
+        if (surface.dataset.zoomEnabled !== 'true') return;
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        openViewer(source, label, surface);
+      });
+    };
+
+    const setZoomAvailability = (
+      figure: HTMLElement,
+      surface: HTMLElement,
+      label: string,
+      enabled: boolean,
+    ) => {
+      figure.dataset.mediaZoomable = String(enabled);
+      surface.dataset.zoomEnabled = String(enabled);
+      if (enabled) {
+        surface.tabIndex = 0;
+        surface.setAttribute('role', 'button');
+        surface.setAttribute('aria-label', `查看大图：${label}`);
+      } else {
+        surface.removeAttribute('tabindex');
+        surface.removeAttribute('role');
+        surface.removeAttribute('aria-label');
+      }
+    };
+
+    const decorateMermaidSvg = (svg: SVGSVGElement) => {
+      if (svg.querySelector(':scope > style[data-project-diagram-theme]')) return;
+      const style = document.createElementNS('http://www.w3.org/2000/svg', 'style');
+      style.dataset.projectDiagramTheme = 'true';
+      style.textContent = DIAGRAM_SVG_STYLES;
+      svg.prepend(style);
+
+      const danger =
+        /失败|异常|错误|拒绝|阻断|终止|不通过|未通过|不可用|无索引|幻觉|删除|abort|fail|error|denied/i;
+      const success =
+        /成功|完成|通过|激活|上线|就绪|可用|答案|最终|返回|命中|ready|active|done|success/i;
+      const data =
+        /mysql|milvus|redis|database|collection|manifest|数据库|向量库|知识库|存储|索引|缓存|历史/i;
+      const warning = /等待|降级|重试|候选|staged|归档|跳过|待处理|待复核|warning/i;
+      const decision = /是否|判断|检查|门禁|分类|路由|存在\?|通过\?/i;
+      const terminal = /^(?:开始|结束|启动|入口|用户问题)|最终|完成$|就绪$|上线$/i;
+
+      const toneTheme = {
+        blue: ['--diagram-blue-fill', '#eaf2ff', '--diagram-blue-stroke', '#356ae6'],
+        green: ['--diagram-green-fill', '#eaf8f1', '--diagram-green-stroke', '#159570'],
+        amber: ['--diagram-amber-fill', '#fff4dd', '--diagram-amber-stroke', '#d28a16'],
+        red: ['--diagram-red-fill', '#fdecec', '--diagram-red-stroke', '#c94b4b'],
+        purple: ['--diagram-purple-fill', '#f1ebff', '--diagram-purple-stroke', '#7653c9'],
+        neutral: ['--diagram-neutral-fill', '#f6f9fd', '--diagram-neutral-stroke', '#b9c8da'],
+      } as const;
+
+      const authoredTone = (shapes: SVGElement[]) => {
+        const authoredStyles = shapes
+          .map((shape) => shape.getAttribute('style') || '')
+          .join(' ')
+          .toLowerCase();
+        if (/f3e8ff|f5f3ff|ede9fe|9333ea|7c3aed/.test(authoredStyles)) return 'purple';
+        if (/fef2f2|fee2e2|fecaca|dc2626|ef4444/.test(authoredStyles)) return 'red';
+        if (/ecfdf5|dcfce7|d1fae5|059669|16a34a|10b981/.test(authoredStyles)) return 'green';
+        if (/fffbeb|fef3c7|fff7ed|ffedd5|d97706|ea580c|f59e0b/.test(authoredStyles)) return 'amber';
+        if (/f8fafc|f9fafb|f3f4f6|64748b|6b7280/.test(authoredStyles)) return 'neutral';
+        if (/eff6ff|dbeafe|bfdbfe|2563eb|3b82f6/.test(authoredStyles)) return 'blue';
+        return undefined;
+      };
+
+      svg.querySelectorAll<SVGGElement>('.node').forEach((node) => {
+        const text = node.textContent?.replace(/\s+/g, ' ').trim() || '';
+        const isDecisionShape = Boolean(node.querySelector(':scope > polygon'));
+        const semanticClass = danger.test(text)
+          ? 'diagram-node--danger'
+          : isDecisionShape || decision.test(text)
+            ? 'diagram-node--decision'
+            : success.test(text)
+              ? 'diagram-node--success'
+              : data.test(text)
+                ? 'diagram-node--data'
+                : warning.test(text)
+                  ? 'diagram-node--warning'
+                  : 'diagram-node--primary';
+        const semanticTone =
+          semanticClass === 'diagram-node--danger'
+            ? 'red'
+            : semanticClass === 'diagram-node--decision' ||
+                semanticClass === 'diagram-node--warning'
+              ? 'amber'
+              : semanticClass === 'diagram-node--success' || semanticClass === 'diagram-node--data'
+                ? 'green'
+                : 'blue';
+        const shapes = [
+          ...node.querySelectorAll<SVGElement>('rect, polygon, circle, ellipse, path'),
+        ];
+        const tone = authoredTone(shapes) || semanticTone;
+        const [fillProperty, fillFallback, strokeProperty, strokeFallback] = toneTheme[tone];
+
+        node.classList.add(semanticClass, `diagram-tone--${tone}`);
+        shapes.forEach((shape) => {
+          shape.style.setProperty('fill', `var(${fillProperty}, ${fillFallback})`, 'important');
+          shape.style.setProperty(
+            'stroke',
+            `var(${strokeProperty}, ${strokeFallback})`,
+            'important',
+          );
+          shape.style.setProperty('stroke-width', '1.5px', 'important');
+        });
+        node.querySelectorAll<SVGElement>('text, tspan').forEach((label) => {
+          label.style.setProperty('fill', 'var(--diagram-text, #172033)', 'important');
+        });
+        node.querySelectorAll<HTMLElement>('span, div, p').forEach((label) => {
+          label.style.setProperty('color', 'var(--diagram-text, #172033)', 'important');
+        });
+        if (terminal.test(text)) node.classList.add('diagram-node--terminal');
+      });
+
+      const clusterTones = ['blue', 'green', 'amber'];
+      svg.querySelectorAll<SVGGElement>('.cluster').forEach((cluster, index) => {
+        const tone = clusterTones[index % clusterTones.length];
+        cluster.classList.add(`diagram-cluster--${tone}`);
+        cluster.querySelectorAll<SVGElement>(':scope > rect').forEach((rect) => {
+          rect.style.setProperty('fill', `var(--diagram-${tone}-fill)`, 'important');
+          rect.style.setProperty('stroke', `var(--diagram-${tone}-stroke)`, 'important');
+        });
+        cluster.querySelectorAll<SVGElement>('.cluster-label text').forEach((label) => {
+          label.style.setProperty('fill', 'var(--diagram-text)', 'important');
+        });
+        cluster.querySelectorAll<HTMLElement>('.cluster-label span').forEach((label) => {
+          label.style.setProperty('color', 'var(--diagram-text)', 'important');
+        });
+      });
+    };
+
+    const diagramNeedsZoom = (diagram: HTMLElement, svg: SVGSVGElement) => {
+      const viewBox = svg.viewBox.baseVal;
+      const rect = svg.getBoundingClientRect();
+      const nodeCount = svg.querySelectorAll('.node, .actor').length;
+      const edgeCount = svg.querySelectorAll('.edgePath, .messageLine0, .messageLine1').length;
+      const clusterCount = svg.querySelectorAll('.cluster').length;
+      const complexity = Number(diagram.dataset.diagramComplexity || 0);
+      const textHeights = [...svg.querySelectorAll<SVGTextElement>('text')]
+        .map((text) => text.getBoundingClientRect().height)
+        .filter((height) => height > 0)
+        .sort((a, b) => a - b);
+      const readableTextHeight = textHeights.length
+        ? textHeights[Math.floor(textHeights.length * 0.25)]
+        : 16;
+      const aspect = viewBox.width / Math.max(viewBox.height, 1);
+      const visiblyReduced =
+        viewBox.width > rect.width * 1.18 || viewBox.height > rect.height * 1.18;
+      const dense = nodeCount >= 11 || edgeCount >= 12 || complexity >= 16 || clusterCount >= 4;
+      const awkwardRatio = (aspect > 2.5 && nodeCount >= 7) || (aspect < 0.48 && nodeCount >= 8);
+      const smallText = visiblyReduced && readableTextHeight < 12.5;
+      const mobilePressure =
+        window.innerWidth <= 820 && (nodeCount >= 7 || edgeCount >= 8 || readableTextHeight < 13.5);
+      return dense || awkwardRatio || smallText || mobilePressure;
+    };
+
+    const enhanceRasterImage = (image: HTMLImageElement) => {
+      if (image.dataset.mediaEnhanced) return;
+      image.dataset.mediaEnhanced = 'true';
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.draggable = false;
+      const label = findContextTitle(image);
+      const mediaNode = image.parentElement?.matches('a') ? image.parentElement : image;
+      const paragraph =
+        mediaNode.parentElement?.matches('p') && mediaNode.parentElement.children.length === 1
+          ? mediaNode.parentElement
+          : undefined;
+      const figure = document.createElement('figure');
+      figure.className = 'content-media media-raster';
+      figure.dataset.mediaTitle = label;
+      const surface = document.createElement('div');
+      surface.className = 'media-surface';
+
+      if (paragraph) paragraph.replaceWith(figure);
+      else mediaNode.replaceWith(figure);
+      surface.append(mediaNode);
+      figure.append(surface, createActionBar(image, label));
+      makeSurfaceInteractive(surface, image, label);
+
+      const classify = () => {
+        const ratio = image.naturalWidth / Math.max(image.naturalHeight, 1);
+        figure.dataset.mediaLayout =
+          ratio < 0.82
+            ? 'portrait'
+            : image.naturalWidth <= 560 && image.naturalHeight <= 560
+              ? 'compact'
+              : 'standard';
+        requestAnimationFrame(() => {
+          const rect = image.getBoundingClientRect();
+          const visiblyReduced =
+            image.naturalWidth > rect.width * 1.15 || image.naturalHeight > rect.height * 1.15;
+          const detailedSource = image.naturalWidth >= 900 || image.naturalHeight >= 760;
+          const mobilePressure =
+            window.innerWidth <= 820 &&
+            (image.naturalWidth > surface.clientWidth || image.naturalHeight > 520);
+          setZoomAvailability(
+            figure,
+            surface,
+            label,
+            (visiblyReduced && detailedSource) || mobilePressure,
+          );
+        });
+      };
+      if (image.complete) classify();
+      else image.addEventListener('load', classify, { once: true });
+    };
+
+    const enhanceMermaidDiagram = (diagram: HTMLElement) => {
+      if (diagram.dataset.mediaEnhanced) return;
+      const svg = diagram.querySelector<SVGSVGElement>(':scope > svg');
+      if (!svg) return;
+      decorateMermaidSvg(svg);
+      diagram.dataset.mediaEnhanced = 'true';
+      diagram.classList.add('content-media', 'media-diagram');
+      diagram.removeAttribute('role');
+      const label = findContextTitle(diagram);
+      diagram.dataset.mediaTitle = label;
+      const surface = document.createElement('div');
+      surface.className = 'media-surface';
+      diagram.insertBefore(surface, svg);
+      surface.append(svg);
+      diagram.append(createActionBar(svg, label));
+      makeSurfaceInteractive(surface, svg, label);
+
+      const viewBox = svg.viewBox.baseVal;
+      if (viewBox.width && viewBox.height) {
+        diagram.dataset.mediaLayout =
+          viewBox.height / viewBox.width > 1.08 ? 'portrait' : 'standard';
+      }
+      requestAnimationFrame(() =>
+        setZoomAvailability(diagram, surface, label, diagramNeedsZoom(diagram, svg)),
+      );
+    };
+
+    const enhanceMedia = (root: ParentNode = document) => {
+      root
+        .querySelectorAll<HTMLImageElement>('.prose img:not([data-media-enhanced])')
+        .forEach(enhanceRasterImage);
+      root
+        .querySelectorAll<HTMLElement>('.prose .mermaid-diagram:not([data-media-enhanced])')
+        .forEach(enhanceMermaidDiagram);
+    };
+
+    enhanceMedia();
+    new MutationObserver((records) => {
+      if (records.some((record) => record.addedNodes.length)) enhanceMedia();
+    }).observe(document.querySelector('main') || document.body, { childList: true, subtree: true });
+
+    let resizeTimer: number | undefined;
+    window.addEventListener('resize', () => {
+      window.clearTimeout(resizeTimer);
+      resizeTimer = window.setTimeout(() => {
+        document
+          .querySelectorAll<HTMLElement>('.media-diagram[data-media-enhanced]')
+          .forEach((diagram) => {
+            const svg = diagram.querySelector<SVGSVGElement>('.media-surface > svg');
+            const surface = diagram.querySelector<HTMLElement>('.media-surface');
+            if (svg && surface)
+              setZoomAvailability(
+                diagram,
+                surface,
+                diagram.dataset.mediaTitle || '图片预览',
+                diagramNeedsZoom(diagram, svg),
+              );
+          });
+      }, 160);
+    });
+  }
+</script>

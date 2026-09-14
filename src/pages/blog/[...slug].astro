@@ -1,0 +1,31 @@
+---
+import { legacyBlogRedirects } from '@/data/project-docs';
+
+export function getStaticPaths() {
+  return legacyBlogRedirects.map((redirect) => ({
+    params: { slug: redirect.path },
+    props: { redirectTo: redirect.target },
+  }));
+}
+
+const redirectTarget = (Astro.props as { redirectTo: string }).redirectTo;
+---
+
+<!doctype html>
+<html lang="zh-CN" data-pagefind-ignore="all">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="robots" content="noindex" />
+    <meta http-equiv="refresh" content={`0;url=${redirectTarget}`} />
+    <link rel="canonical" href={redirectTarget} />
+    <title>页面已迁移</title>
+  </head>
+  <body>
+    <p>
+      页面已迁移，正在前往<a href={redirectTarget}>新的项目文档地址</a>。
+    </p>
+    <script is:inline define:vars={{ redirectTarget }}>
+      window.location.replace(redirectTarget);
+    </script>
+  </body>
+</html>

@@ -1,0 +1,181 @@
+---
+import Header from '@/components/Header.astro';
+import Footer from '@/components/Footer.astro';
+import MediaViewer from '@/components/MediaViewer.astro';
+import SEO from '@/components/SEO.astro';
+import { site } from '@/data/site';
+import '@/styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+  image?: string;
+  type?: 'website' | 'article';
+  publishedTime?: Date;
+}
+
+const { title, description, image, type, publishedTime } = Astro.props;
+const analyticsToken = import.meta.env.PUBLIC_CF_ANALYTICS_TOKEN;
+---
+
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width" />
+    <meta name="generator" content={Astro.generator} />
+    <meta name="theme-color" content="#f7f8fa" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title={site.name} href="/rss.xml" />
+    <SEO title={title} description={description} image={image} type={type} publishedTime={publishedTime} />
+    {analyticsToken && <script is:inline defer data-cf-beacon={JSON.stringify({ token: analyticsToken })} src="https://static.cloudflareinsights.com/beacon.min.js"></script>}
+  </head>
+  <body>
+    <Header />
+    <main><slot /></main>
+    <MediaViewer />
+    <Footer />
+    <script is:inline>
+      async function renderMermaidDiagrams() {
+        // Astro's Shiki highlighter emits Mermaid fences as `data-language="plaintext"`
+        // in the final HTML. Detect diagram blocks by their Mermaid directive instead
+        // of relying on a language attribute that may be rewritten by the highlighter.
+        // Shiki wraps every source line in a `.line` span without inserting newline
+        // characters between spans. Rebuild the original source before parsing;
+        // directives such as `direction TB` require a line break before the next node.
+        const getMermaidSource = (code) => {
+          const lines = [...code.querySelectorAll(':scope > .line')];
+          if (lines.length) return lines.map((line) => line.textContent || '').join('\n').trim();
+          return (code.textContent || '').trim();
+        };
+        const mermaidStart = /^(flowchart|graph|sequenceDiagram|classDiagram|stateDiagram(?:-v2)?|erDiagram|journey|gantt|pie|mindmap|timeline|gitGraph|C4Context)\b/i;
+        const blocks = [...document.querySelectorAll('pre code')].filter((code) => {
+          const source = getMermaidSource(code);
+          return mermaidStart.test(source);
+        });
+        if (!blocks.length) return;
+        let mermaid;
+        try {
+          mermaid = await new Promise((resolve, reject) => {
+            if (globalThis.mermaid) return resolve(globalThis.mermaid);
+            const script = document.createElement('script');
+            script.src = '/vendor/mermaid.min.js';
+            script.onload = () => globalThis.mermaid ? resolve(globalThis.mermaid) : reject(new Error('Mermaid global was not created'));
+            script.onerror = () => reject(new Error('Mermaid bundle failed to load'));
+            document.head.appendChild(script);
+          });
+          mermaid.initialize({
+            startOnLoad: false,
+            securityLevel: 'strict',
+            theme: 'base',
+            fontFamily: 'Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif',
+            themeVariables: {
+              background: '#fcfdff',
+              primaryColor: '#eaf2ff',
+              primaryBorderColor: '#356ae6',
+              primaryTextColor: '#172033',
+              secondaryColor: '#eaf8f1',
+              secondaryBorderColor: '#159570',
+              secondaryTextColor: '#172033',
+              tertiaryColor: '#fff4dd',
+              tertiaryBorderColor: '#d28a16',
+              tertiaryTextColor: '#172033',
+              lineColor: '#6f7c91',
+              clusterBkg: '#f6f9fd',
+              clusterBorder: '#b9c8da',
+              edgeLabelBackground: '#fcfdff',
+              noteBkgColor: '#fff7e6',
+              noteBorderColor: '#d28a16',
+              noteTextColor: '#172033',
+              actorBkg: '#eaf2ff',
+              actorBorder: '#356ae6',
+              actorTextColor: '#172033',
+              actorLineColor: '#9aa9bc',
+              signalColor: '#56657a',
+              signalTextColor: '#172033',
+              activationBkgColor: '#eaf8f1',
+              activationBorderColor: '#159570',
+              labelBoxBkgColor: '#fcfdff',
+              labelBoxBorderColor: '#b9c8da',
+              labelTextColor: '#172033',
+              fontSize: '15px',
+            },
+            flowchart: {
+              curve: 'basis',
+              nodeSpacing: 42,
+              rankSpacing: 58,
+              padding: 14,
+              useMaxWidth: false,
+            },
+            sequence: {
+              actorMargin: 54,
+              boxMargin: 12,
+              messageMargin: 38,
+              noteMargin: 14,
+              useMaxWidth: false,
+            },
+          });
+        } catch (error) {
+          console.warn('Mermaid bundle could not be loaded; source code remains visible.', error);
+          return;
+        }
+
+        for (const [index, block] of blocks.entries()) {
+          try {
+            const originalSource = getMermaidSource(block);
+            const arrowCount = (originalSource.match(/-->|-.->|==>|--x|--o/g) || []).length;
+            const groupCount = (originalSource.match(/^\s*subgraph\b/gim) || []).length;
+            const shouldStackWideFlow = /^(flowchart|graph)\s+LR\b/i.test(originalSource)
+              && (arrowCount > 7 || groupCount > 2);
+            const source = shouldStackWideFlow
+              ? originalSource.replace(/^((?:flowchart|graph)\s+)LR\b/i, '$1TB')
+              : originalSource;
+            const render = async (diagramSource, id) => {
+              const result = await mermaid.render(id, diagramSource);
+              // Mermaid 8 returns an error SVG instead of rejecting the promise.
+              // Treat that SVG as a failed render so it never replaces the source
+              // with a large "Syntax error in graph" panel.
+              if (/Syntax error in graph/i.test(result.svg)) throw new Error('Mermaid returned a syntax-error SVG');
+              return result;
+            };
+            let rendered;
+            try {
+              rendered = await render(source, `diagram-${index}`);
+            } catch (error) {
+              // Older Mermaid releases do not understand the optional `direction`
+              // directive inside subgraphs. Retry without those directives while
+              // keeping the original Markdown untouched.
+              const compatibleSource = source
+                .replace(/^\s*direction\s+(?:TB|BT|LR|RL)\s*$/gim, '')
+                .replace(/\n{3,}/g, '\n\n')
+                .trim();
+              if (compatibleSource === source) throw error;
+              rendered = await render(compatibleSource, `diagram-${index}-compatible`);
+            }
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mermaid-diagram';
+            wrapper.setAttribute('role', 'img');
+            wrapper.setAttribute('aria-label', '项目架构流程图');
+            wrapper.dataset.diagramType = /^sequenceDiagram\b/i.test(source)
+              ? 'sequence'
+              : /^stateDiagram/i.test(source)
+                ? 'state'
+                : /^gantt\b/i.test(source)
+                  ? 'gantt'
+                  : 'flowchart';
+            wrapper.dataset.diagramComplexity = String(arrowCount + groupCount * 2);
+            if (shouldStackWideFlow) wrapper.dataset.layoutOptimized = 'stacked';
+            wrapper.innerHTML = rendered.svg;
+            block.closest('pre')?.replaceWith(wrapper);
+          } catch (error) {
+            const pre = block.closest('pre');
+            pre?.setAttribute('data-mermaid-error', 'true');
+            console.warn(`Mermaid diagram ${index + 1} could not be rendered; source code remains visible.`, error);
+          }
+        }
+      }
+      if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', renderMermaidDiagrams);
+      else renderMermaidDiagrams();
+    </script>
+  </body>
+</html>

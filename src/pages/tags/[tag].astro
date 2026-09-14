@@ -1,0 +1,59 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import DocumentationProjectCard from '@/components/DocumentationProjectCard.astro';
+import { allProjectLessons, projectDocuments } from '@/data/project-docs';
+
+export async function getStaticPaths() {
+  const tags = new Set([
+    ...allProjectLessons.flatMap((lesson) => lesson.tags),
+    ...projectDocuments.flatMap((project) => project.tags),
+  ]);
+  return [...tags].map((tag) => ({ params: { tag }, props: { tag } }));
+}
+
+const { tag } = Astro.props;
+const lessons = allProjectLessons.filter((lesson) => lesson.tags.includes(tag));
+const projects = projectDocuments.filter((project) => project.tags.includes(tag));
+---
+
+<BaseLayout title={`标签：${tag}`} description={`浏览所有带有 ${tag} 标签的内容。`}>
+  <div class="container page-header">
+    <p class="eyebrow">Tag</p>
+    <h1>#{tag}</h1>
+    <p>{lessons.length + projects.length} 项内容</p>
+  </div>
+  {lessons.length > 0 && (
+    <section class="container section-block">
+      <div class="section-heading">
+        <h2>项目章节</h2>
+      </div>
+      <div class="card-grid post-grid">
+        {lessons.map((lesson) => (
+          <article class="card post-card">
+            <div class="card-body">
+              <div class="eyebrow">
+                {lesson.projectName} · {lesson.groupTitle}
+              </div>
+              <h3>
+                <a href={lesson.route}>{lesson.title}</a>
+              </h3>
+              <p>{lesson.description}</p>
+            </div>
+          </article>
+        ))}
+      </div>
+    </section>
+  )}
+  {projects.length > 0 && (
+    <section class="container section-block">
+      <div class="section-heading">
+        <h2>项目</h2>
+      </div>
+      <div class="card-grid project-grid">
+        {projects.map((project) => (
+          <DocumentationProjectCard project={project} />
+        ))}
+      </div>
+    </section>
+  )}
+</BaseLayout>

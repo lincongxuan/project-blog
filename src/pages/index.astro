@@ -1,0 +1,61 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import DocumentationProjectCard from '@/components/DocumentationProjectCard.astro';
+import { projectDocuments } from '@/data/project-docs';
+import { site } from '@/data/site';
+
+const recentProjects = projectDocuments.filter((project) => project.recent);
+---
+
+<BaseLayout title={site.name} description={site.description}>
+  <section class="hero container">
+    <div class="hero-copy">
+      <p class="eyebrow">{site.role}</p>
+      <h1>
+        把正在做的项目，<span>写成值得分享的故事。</span>
+      </h1>
+      <p class="hero-lead">{site.description} 这里分享构建产品时的技术选择、实践过程和真实复盘。</p>
+      <div class="hero-actions">
+        <a class="button primary" href="/projects">
+          浏览项目 <span aria-hidden="true">→</span>
+        </a>
+        <a class="button secondary" href="/about">
+          了解更多
+        </a>
+      </div>
+    </div>
+    <div class="hero-aside" aria-hidden="true">
+      <div class="hero-orb"></div>
+      <div class="hero-grid"></div>
+      <p class="hero-caption">BUILD · LEARN · SHARE</p>
+    </div>
+  </section>
+
+  <section class="container section-block" aria-labelledby="projects-heading">
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Recent projects</p>
+        <h2 id="projects-heading">近期项目</h2>
+      </div>
+      <a class="text-link" href="/projects">
+        查看全部项目 →
+      </a>
+    </div>
+    <div class="card-grid project-grid">
+      {recentProjects.map((project) => (
+        <DocumentationProjectCard project={project} />
+      ))}
+    </div>
+  </section>
+
+  <section class="container newsletter-card" aria-labelledby="about-cta">
+    <div>
+      <p class="eyebrow">A small invitation</p>
+      <h2 id="about-cta">一起把想法做出来。</h2>
+    </div>
+    <p>如果你对某个项目或文章有反馈，欢迎通过 GitHub 或邮件联系我。</p>
+    <a class="button secondary" href={`mailto:${site.email}`}>
+      联系我 ↗
+    </a>
+  </section>
+</BaseLayout>

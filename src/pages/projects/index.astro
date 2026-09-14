@@ -1,0 +1,18 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import DocumentationProjectCard from '@/components/DocumentationProjectCard.astro';
+import { projectDocuments } from '@/data/project-docs';
+---
+
+<BaseLayout title="项目" description="正在进行和已经完成的项目作品集。">
+  <div class="container page-header">
+    <p class="eyebrow">Selected work</p>
+    <h1>项目</h1>
+    <p>完整记录项目目标、架构设计、核心实现、质量评测与工程交付。</p>
+  </div>
+  <div class="container card-grid project-grid page-grid">
+    {projectDocuments.map((project) => (
+      <DocumentationProjectCard project={project} />
+    ))}
+  </div>
+</BaseLayout>

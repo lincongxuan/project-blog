@@ -1,0 +1,45 @@
+---
+interface Props {
+  headings: { depth: number; slug: string; text: string }[];
+}
+const { headings } = Astro.props;
+const visible = headings.filter(
+  (heading) => heading.depth >= 2 && heading.depth <= 3 && !/^\d+(?:\.\d+){2,}(?:\s|$)/.test(heading.text),
+);
+---
+
+{visible.length > 0 && (
+  <aside class="toc" aria-label="文章目录">
+    <p class="toc-title">目录</p>
+    <ul>
+      {visible.map((heading) => (
+        <li class:list={{ nested: heading.depth > 2 }}><a data-toc-link href={`#${heading.slug}`}>{heading.text}</a></li>
+      ))}
+    </ul>
+  </aside>
+)}
+
+<script>
+  const toc = document.querySelector('.toc');
+  const links = [...(toc?.querySelectorAll<HTMLAnchorElement>('[data-toc-link]') || [])];
+  const headings = links
+    .map((link) => document.getElementById(decodeURIComponent(link.hash.slice(1))))
+    .filter((heading): heading is HTMLElement => Boolean(heading));
+
+  const activate = (id: string) => {
+    for (const link of links) link.classList.toggle('active', decodeURIComponent(link.hash.slice(1)) === id);
+  };
+
+  if (headings.length) {
+    activate(headings[0].id);
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const visibleHeading = entries.find((entry) => entry.isIntersecting);
+        if (visibleHeading) activate(visibleHeading.target.id);
+      },
+      { rootMargin: '-18% 0px -72%', threshold: 0 },
+    );
+    headings.forEach((heading) => observer.observe(heading));
+    links.forEach((link) => link.addEventListener('click', () => activate(decodeURIComponent(link.hash.slice(1)))));
+  }
+</script>

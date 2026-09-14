@@ -1,0 +1,18 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import DocumentationProjectCard from '@/components/DocumentationProjectCard.astro';
+import { projectDocuments } from '@/data/project-docs';
+---
+
+<BaseLayout title="项目文档" description="浏览项目开发文档与工程实践。">
+  <div class="container page-header">
+    <p class="eyebrow">Project documents</p>
+    <h1>项目文档</h1>
+    <p>以完整项目组织开发内容，进入项目后可通过目录按章节连续阅读。</p>
+  </div>
+  <div class="container card-grid project-grid page-grid">
+    {projectDocuments.map((project) => (
+      <DocumentationProjectCard project={project} />
+    ))}
+  </div>
+</BaseLayout>

@@ -1,0 +1,112 @@
+---
+import BaseLayout from './BaseLayout.astro';
+import TableOfContents from '@/components/TableOfContents.astro';
+import GiscusComments from '@/components/GiscusComments.astro';
+import TagList from '@/components/TagList.astro';
+import ShareButtons from '@/components/ShareButtons.astro';
+import { formatDate } from '@/utils/formatDate';
+import { getReadingTime } from '@/utils/readingTime';
+import type { ProjectDocumentation, ProjectHeading, ProjectLesson } from '@/data/project-docs';
+
+interface Props {
+  project: ProjectDocumentation;
+  lesson: ProjectLesson;
+  headings: ProjectHeading[];
+  previous?: ProjectLesson;
+  next?: ProjectLesson;
+}
+
+const { project, lesson, headings, previous, next } = Astro.props;
+const currentGroup = project.groups.find((group) => group.slug === lesson.groupSlug);
+---
+
+<BaseLayout
+  title={`${lesson.title} · ${project.name}`}
+  description={lesson.description}
+  type="article"
+  publishedTime={lesson.pubDate}
+>
+  <div class="container course-container article-shell">
+    <div class="course-layout">
+      <aside class="course-sidebar" aria-label="完整项目目录">
+        <div class="sidebar-heading">
+          <p class="eyebrow">项目目录</p>
+          <h2>{project.name}</h2>
+          <p>
+            {lesson.lessonNumber} / {project.lessons.length} 章
+          </p>
+        </div>
+        <nav class="course-tree">
+          {project.groups.map((group) => (
+            <details class="course-group" open={group.slug === lesson.groupSlug}>
+              <summary>
+                <span>{group.title}</span>
+              </summary>
+              <ol>
+                {group.lessons.map((item) => (
+                  <li class:list={{ current: item.id === lesson.id, unnumbered: !item.navLabel }}>
+                    <a href={item.route} aria-current={item.id === lesson.id ? 'page' : undefined}>
+                      {item.navLabel && <span class="lesson-index">{item.navLabel}</span>}
+                      <span>{item.title}</span>
+                    </a>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ))}
+        </nav>
+      </aside>
+
+      <article class="article">
+        <header class="article-header">
+          <div class="lesson-meta">
+            <span class="lesson-phase">{currentGroup?.title}</span>
+            <span class="lesson-chapter">
+              {lesson.navLabel
+                ? `${lesson.groupSlug === 'appendices' ? '附录' : '第'} ${lesson.navLabel}${lesson.groupSlug === 'appendices' ? '' : ' 章'}`
+                : '实践模块'}
+            </span>
+          </div>
+          <h1>{lesson.title}</h1>
+          <p class="lead">{lesson.description}</p>
+          <div class="article-supporting-meta">
+            <div class="reading-meta">
+              <time datetime={lesson.pubDate.toISOString()}>{formatDate(lesson.pubDate)}</time>
+              <span aria-hidden="true">·</span>
+              <span>{getReadingTime(lesson.body)}</span>
+            </div>
+            <TagList tags={lesson.tags} />
+          </div>
+        </header>
+
+        <div class="article-layout">
+          <div class="prose" data-pagefind-body>
+            <slot />
+          </div>
+          <TableOfContents headings={headings} />
+        </div>
+
+        <nav class="article-nav" aria-label="项目章节导航">
+          {previous ? (
+            <a href={previous.route}>
+              <span class="eyebrow">上一章</span>
+              <strong>← {previous.title}</strong>
+            </a>
+          ) : (
+            <span class="nav-placeholder" />
+          )}
+          {next ? (
+            <a class="next" href={next.route}>
+              <span class="eyebrow">下一章</span>
+              <strong>{next.title} →</strong>
+            </a>
+          ) : (
+            <span class="nav-placeholder" />
+          )}
+        </nav>
+        <ShareButtons title={lesson.title} />
+        <GiscusComments />
+      </article>
+    </div>
+  </div>
+</BaseLayout>

@@ -1,0 +1,16 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { site } from '@/data/site';
+---
+
+<BaseLayout title="关于" description={`关于 ${site.author} 和这个项目博客。`}>
+  <div class="container narrow page-header"><p class="eyebrow">About</p><h1>你好，我是{site.author}。</h1><p class="lead">我是一名{site.role}，喜欢把模糊的问题拆开，做成简单、可靠、可持续的产品。</p></div>
+  <div class="container narrow prose about-copy">
+    <h2>这个博客为什么存在</h2>
+    <p>项目的价值不只在最终结果，也在于过程中那些值得复用的判断。这里会记录技术选择、开发过程、失败尝试和复盘。</p>
+    <h2>我关注什么</h2>
+    <ul><li>把复杂问题转化为清晰的用户体验</li><li>构建可维护、可验证的工程系统</li><li>用开源和写作分享经验</li></ul>
+    <h2>联系我</h2>
+    <p>欢迎通过 <a href={site.social.github}>GitHub</a> 或 <a href={`mailto:${site.email}`}>邮件</a>交流。</p>
+  </div>
+</BaseLayout>

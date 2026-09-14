@@ -1,0 +1,32 @@
+---
+import { absoluteUrl } from '@/utils/seo';
+
+interface Props { title: string; }
+const { title } = Astro.props;
+const url = absoluteUrl(Astro.url.pathname);
+const encodedUrl = encodeURIComponent(url);
+const encodedTitle = encodeURIComponent(title);
+---
+
+<div class="share-row" aria-label="分享文章">
+  <span class="eyebrow">分享</span>
+  <a href={`https://twitter.com/intent/tweet?text=${encodedTitle}&url=${encodedUrl}`} target="_blank" rel="noreferrer">X ↗</a>
+  <a href={`https://www.linkedin.com/sharing/share-offsite/?url=${encodedUrl}`} target="_blank" rel="noreferrer">LinkedIn ↗</a>
+  <button type="button" data-copy-url={url}>复制链接</button>
+  <span class="copy-status" aria-live="polite"></span>
+</div>
+
+<script is:inline>
+  document.querySelectorAll('[data-copy-url]').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const status = button.parentElement?.querySelector('.copy-status');
+      try {
+        await navigator.clipboard.writeText(button.dataset.copyUrl || location.href);
+        if (status) status.textContent = '已复制';
+        setTimeout(() => { if (status) status.textContent = ''; }, 1800);
+      } catch {
+        if (status) status.textContent = '复制失败';
+      }
+    });
+  });
+</script>

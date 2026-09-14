@@ -1,0 +1,16 @@
+<button class="icon-button" type="button" id="theme-toggle" aria-label="切换颜色主题">
+  <span aria-hidden="true">◐</span>
+</button>
+
+<script is:inline>
+  const root = document.documentElement;
+  const saved = localStorage.getItem('theme');
+  if (saved === 'dark' || (!saved && matchMedia('(prefers-color-scheme: dark)').matches)) {
+    root.dataset.theme = 'dark';
+  }
+  document.querySelector('#theme-toggle')?.addEventListener('click', () => {
+    const next = root.dataset.theme === 'dark' ? 'light' : 'dark';
+    root.dataset.theme = next;
+    localStorage.setItem('theme', next);
+  });
+</script>

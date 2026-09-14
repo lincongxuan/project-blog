@@ -1,0 +1,18 @@
+---
+import { site } from '@/data/site';
+---
+
+<footer class="site-footer">
+  <div class="container footer-inner">
+    <div>
+      <p class="footer-title">{site.name}</p>
+      <p class="muted">记录正在发生的项目，也记录如何把它们做得更好。</p>
+    </div>
+    <div class="footer-links">
+      <a href="/rss.xml">RSS</a>
+      <a href={site.social.github} rel="me">GitHub</a>
+      <a href={`mailto:${site.email}`}>Email</a>
+    </div>
+    <p class="muted footer-copy">© {new Date().getFullYear()} {site.author}. Built with Astro.</p>
+  </div>
+</footer>

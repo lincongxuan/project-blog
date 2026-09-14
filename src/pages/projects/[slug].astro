@@ -1,0 +1,29 @@
+---
+import ProjectDocumentLayout from '@/layouts/ProjectDocumentLayout.astro';
+import {
+  getLessonNavigation,
+  projectDocuments,
+  type ProjectDocumentation,
+} from '@/data/project-docs';
+
+export function getStaticPaths() {
+  return projectDocuments.map((project) => ({
+    params: { slug: project.slug },
+    props: { project },
+  }));
+}
+
+const { project } = Astro.props as { project: ProjectDocumentation };
+const lesson = project.lessons[0];
+const { previous, next } = getLessonNavigation(project, lesson);
+---
+
+<ProjectDocumentLayout
+  project={project}
+  lesson={lesson}
+  headings={lesson.headings}
+  previous={previous}
+  next={next}
+>
+  <div set:html={lesson.html} />
+</ProjectDocumentLayout>

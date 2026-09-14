@@ -1,0 +1,29 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+import { allProjectLessons, projectDocuments } from '@/data/project-docs';
+
+const counts = new Map<string, number>();
+for (const item of allProjectLessons) {
+  for (const tag of item.tags) counts.set(tag, (counts.get(tag) || 0) + 1);
+}
+for (const project of projectDocuments) {
+  for (const tag of project.tags) counts.set(tag, (counts.get(tag) || 0) + 1);
+}
+const tags = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+---
+
+<BaseLayout title="标签" description="按主题浏览文章和项目。">
+  <div class="container page-header">
+    <p class="eyebrow">Explore</p>
+    <h1>标签</h1>
+    <p>按主题找到相关的文章和项目。</p>
+  </div>
+  <div class="container tag-cloud page-grid">
+    {tags.map(([tag, count]) => (
+      <a href={`/tags/${encodeURIComponent(tag)}`}>
+        <span>#{tag}</span>
+        <small>{count}</small>
+      </a>
+    ))}
+  </div>
+</BaseLayout>
