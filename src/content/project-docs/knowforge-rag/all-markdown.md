@@ -102,7 +102,7 @@ featured: true
 
 1. **知识截止日期**：模型训练完成后，无法获取训练数据之后的新信息。例如 GPT-4 的知识截止到 2023 年某月，之后发生的事情它不知道。
 2. **幻觉问题**：当模型不确定某个答案时，它可能会"编造"一个看起来很合理但实际上是错误的内容。这在企业场景中是不可接受的。
-3. **私有知识无法覆盖**：企业内部的制度、流程、业务文档是私有数据，从未进入过公开训练集，模型自然无法回答。
+3. **私有知识无法覆盖**：跨境贸易的规则、单证、业务文档是私有数据，从未进入过公开训练集，模型自然无法回答。
 
 **RAG 的解决思路**非常简单：
 
@@ -214,7 +214,7 @@ flowchart TD
 
 ### 2.1 一句话描述
 
-> 这是一个基于 LangChain + Milvus 2.5 Hybrid Search 的多场景 RAG 平台。不是简单的 Demo，而是补齐了企业级 RAG 完整工程闭环的项目。
+> 这是一个基于 LangChain + Milvus 2.5 Hybrid Search 的企业级 RAG 平台，当前只启用跨境贸易业务场景，同时保留可配置的场景注册能力。它不是简单的 Demo，而是补齐了企业级 RAG 完整工程闭环的项目。
 
 ### 2.2 全景架构图
 
@@ -298,9 +298,9 @@ flowchart TD
 
 | 端点 | 方法 | 触发时机 | 作用 |
 | --- | --- | --- | --- |
-| `GET /api/scenarios` | HTTP | 页面加载时 | 拉取所有可用业务场景列表（下拉框的数据来源） |
-| `GET /api/sources` | HTTP | 切换业务场景时 | 拉取当前场景可选的 source 过滤项 |
-| `GET /api/kb_versions` | HTTP | 切换业务场景时 | 查看当前场景的知识库版本状态 |
+| `GET /api/scenarios` | HTTP | 页面加载时 | 拉取当前可用业务场景（现阶段仅返回跨境贸易） |
+| `GET /api/sources` | HTTP | 场景初始化或刷新时 | 拉取跨境贸易场景可选的 source 过滤项 |
+| `GET /api/kb_versions` | HTTP | 场景初始化或刷新时 | 查看跨境贸易场景的知识库版本状态 |
 | `POST /api/create_session` | HTTP | 用户选择场景后 | 创建新会话，返回`session_id`（后续所有问答都绑定这个 ID） |
 | `WebSocket /api/stream` | WebSocket | 用户每次发送问题 | 走完整 RAG 流式问答链路，逐 token 推送答案 |
 | `GET /api/history/{id}` | HTTP | 用户刷新页面或切换会话 | 恢复之前的聊天记录 |
@@ -382,7 +382,7 @@ Pipeline 是问答的"流水线车间"，包含五个关键环节：
 
 | 环节 | 触发条件 | 做了什么 |
 | --- | --- | --- |
-| 查询改写（rewrite） | 意图为 FOLLOW\_UP 时 | "那审批呢" → "入职流程中的审批步骤是什么"，把省略的主语和背景补全 |
+| 查询改写（rewrite） | 意图为 FOLLOW\_UP 时 | "那审批呢" → "HS 编码归类流程中的审批步骤是什么"，把省略的主语和背景补全 |
 | 查询变体（query\_variants） | 检索计划启用时，主要用于知识查询和追问 | 原问题 + 等价问法（规则命中本地生成，否则 LLM 生成），提高召回覆盖 |
 | 上下文构建（context） | Doc RAG 时有多个 chunk | FAQ 前 2 条 + Doc 得分达标片段，按`[1] 来源 + 内容`格式拼接 |
 | 事件生成（events） | 流式问答全程 | 产出`start → status → token... → end`事件序列，前端按 type 渲染 |
@@ -408,7 +408,7 @@ Memory 模块管理两件事：
 
 **⑦ Governance — 知识库治理（版本与隔离）**
 
-Governance 模块保证不同场景、不同版本、不同权限的数据不会"串门"：
+Governance 模块保证场景边界、知识库版本和数据权限不会互相串扰：
 
 - **kb\_version / version\_seq**：FAQ 按`kb_version == active_version`精确过滤；文档 chunk 按 active`version_seq`解释`valid_from_seq/valid_to_seq`有效期窗口，支持引用式增量和快速回滚
 - **data\_scope**：每条数据还有`tenant_id`、`dataset_id`、`visibility`、`allowed_roles`字段。检索时拼成 Milvus 表达式，实现租户级数据隔离
@@ -460,7 +460,7 @@ MySQL**不承担 FAQ/文档语义检索**。知识召回在 Milvus 中完成；M
 
 #### 2.2.6 完整问答链路走读：一次用户提问经历了什么
 
-把全景架构图的箭头串起来，就是一次完整问答请求的真实轨迹。以下用"入职流程有哪些步骤"这个提问来走一遍：
+把全景架构图的箭头串起来，就是一次完整问答请求的真实轨迹。以下用"HS 编码归类流程有哪些步骤"这个提问来走一遍：
 
 ```mermaid
 sequenceDiagram
@@ -475,8 +475,8 @@ sequenceDiagram
     participant LLM as LLM<br/>(DashScope)
     participant Mem as History<br/>/ Memory
 
-    User->>WS: 输入"入职流程有哪些步骤"并点击发送
-    WS->>Chat: {"type":"query","content":"入职流程有哪些步骤",<br/>"session_id":"xxx","scenario_id":"enterprise_knowledge"}
+    User->>WS: 输入"HS 编码归类流程有哪些步骤"并点击发送
+    WS->>Chat: {"type":"query","content":"HS 编码归类流程有哪些步骤",<br/>"session_id":"xxx","scenario_id":"cross_border_risk"}
     Chat->>QS: stream_query(query, session_id, scenario_id)
 
     Note over QS: ① resolve_scenario() → 加载场景 TOML 配置
@@ -497,7 +497,7 @@ sequenceDiagram
     Mem-->>QS: 历史消息列表
 
     QS->>IC: ⑧ classify_intent(query, history, scenario)
-    IC-->>QS: Intent=KNOWLEDGE_QUERY, source=hr_process
+    IC-->>QS: Intent=KNOWLEDGE_QUERY, source=classification
 
     QS->>PL: ⑨ build_retrieval_plan(intent)
     PL-->>QS: FAQ top_k=3, Doc top_k=8, rerank=True
@@ -546,7 +546,7 @@ sequenceDiagram
 
 1. **问候/越界快速通道**：`User → /api/stream → chat.py → QAService.stream_query → decide_route()`在主链路内直接产出答案事件，后面的检索准备、检索和 LLM 全部跳过。耗时取决于运行环境和限流/数据库状态，通常远低于完整 RAG。
 2. **FAQ 直出通道**：分两种情况：Stage 1 的`route=faq_exact`只允许标准问题精确匹配；Stage 3 的 FAQ 标准直出则发生在检索准备之后，允许精确匹配或达到动态阈值。两者都会返回`metadata.answer`，不进入 Doc 检索和 LLM 生成。
-3. **追问改写通道**：用户说"那审批呢"→ 意图识别为 FOLLOW\_UP → Pipeline 读取历史，把"入职流程中的审批步骤"补全 → 后续流程和普通 RAG 一样。
+3. **追问改写通道**：用户说"那审批呢"→ 意图识别为 FOLLOW\_UP → Pipeline 读取历史，把"HS 编码归类流程中的审批步骤"补全 → 后续流程和普通 RAG 一样。
 
 ### 2.3 部署架构图
 
@@ -731,20 +731,14 @@ flowchart TB
 | 缓存 | Redis + 进程内缓存 + MySQL 命名空间 | 支撑 query embedding、FAQ/Doc 检索和版本激活后的缓存失效闭环 |
 | 配置 | `.env.compose`/`.env`+`scenario.toml` | 运行时环境变量 + 场景级 TOML 配置 |
 
-### 2.5 八大业务场景
+### 2.5 跨境贸易业务场景
 
-项目内置 8 个行业场景，共享同一套核心引擎：
+项目当前只保留跨境贸易这一业务场景，共享完整的 RAG 核心引擎与治理流程：
 
-| 场景 ID | 行业 | 典型问题 |
+| 场景 ID | 业务领域 | 典型问题 |
 | --- | --- | --- |
-| `enterprise_knowledge` | 企业内部知识 | "入职流程有哪些步骤" |
-| `saas_support` | SaaS 客服 | "API 限流导致接口失败怎么排查" |
-| `equipment_ops` | 设备运维 | "日检异常怎么升级" |
-| `compliance_qa` | 合规风控 | "供应商尽调需要哪些材料" |
-| `cross_border_risk` | 跨境贸易 | "HS 归类争议怎么处理" |
-| `tender_contract_risk` | 招投标合同 | "合同变更流程是什么" |
-| `insurance_claims` | 保险理赔 | "收款账户不一致可以打款吗" |
-| `engineering_project_qa` | 工程项目 | "施工图纸和强制性规范冲突怎么办" |
+| `cross_border_risk` | 跨境贸易 | "跨境贸易中 HS 编码归类争议怎么处理" |
+
 
 ### 2.6 核心模块一览
 
@@ -760,7 +754,7 @@ qa_core/
 ├── governance/       # 治理 — 知识库版本、数据隔离
 ├── memory/           # 记忆 — 聊天历史、摘要、反馈
 ├── quality/          # 质量 — 入库质量、冲突检测
-├── scenarios/        # 场景 — 多行业配置、source 推断
+├── scenarios/        # 场景配置、source 推断（当前仅跨境贸易）
 ├── config/           # 配置 — 设置、日志、启动校验
 └── observability/    # 可观测 — 追踪、评测、Bad Case
 ```
@@ -825,8 +819,8 @@ docker build -f Dockerfile.base -t localhost/knowforge-rag-platform-base:py312 .
 # 3. 构建 API
 docker compose --env-file .env.compose build api
 
-# 4. 初始化并激活八个业务场景
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init all scenarios"
+# 4. 初始化并激活跨境贸易业务场景
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init cross-border trade"
 
 # 5. 启动 API
 docker compose --env-file .env.compose up -d api
@@ -893,7 +887,7 @@ flowchart TD
     Active -- "否" --> Fail8["❌ 启动失败<br/>请先入库并激活版本"]
     Active -- "是" --> Intent["🔎 预热 BERT 意图决策网关"]
     Intent --> LLMProbe["📡 异步探测 LLM 连通性<br/>只写运行状态，不阻断启动"]
-    LLMProbe --> Warmup["🔥 等待检索栈预热完成<br/>BGE Embedding + 8 个场景的 FAQ/Doc Collection<br/>+ CrossEncoder Reranker"]
+    LLMProbe --> Warmup["🔥 等待检索栈预热完成<br/>BGE Embedding + 当前跨境贸易场景的 FAQ/Doc Collection<br/>+ CrossEncoder Reranker"]
     Warmup --> Ready["✅ 服务就绪<br/>开始接受请求"]
 
     style Fail1 fill:#FEF2F2,stroke:#DC2626
@@ -934,7 +928,7 @@ async def warmup_runtime() -> None:
     # 后台记录 LLM 可用性；这里不等待，也不以失败阻断启动
     asyncio.create_task(refresh_llm_status_background())
 
-    # 预热 BGE、全部场景的 FAQ/Doc Collection、CrossEncoder，完成前不接收流量
+    # 预热 BGE、当前已配置场景的 FAQ/Doc Collection、CrossEncoder，完成前不接收流量
     start_retrieval_warmup_background()
     await asyncio.to_thread(wait_for_retrieval_warmup)
 ```
@@ -1017,7 +1011,7 @@ def validate_runtime_environment() -> dict[str, object]:
 ```mermaid
 flowchart LR
     subgraph Input["输入：自然语言"]
-        T1["入职流程需要准备哪些材料"]
+        T1["HS 编码归类流程需要准备哪些材料"]
     end
 
     subgraph Model["Embedding 模型 (BGE-M3)"]
@@ -1087,8 +1081,8 @@ Embedding 把文本变成向量以后，检索系统要回答一个问题：**�
 直观理解：
 
 ```text
-"新人入职流程"       → 方向接近 "新员工报到步骤"       → cosine 高
-"新人入职流程"       → 方向远离 "VPN 连接失败"         → cosine 低
+"HS 编码归类流程"       → 方向接近 "报关资料提交步骤"       → cosine 高
+"HS 编码归类流程"       → 方向远离 "报关系统连接失败"         → cosine 低
 ```
 
 #### 1.3.2 欧几里得距离：看直线距离
@@ -1126,8 +1120,8 @@ Embedding 把文本变成向量以后，检索系统要回答一个问题：**�
 import numpy as np
 
 # 两个语义相近的句子的向量
-A = np.array([0.5, 0.3, 0.8, ...])  # "入职需要什么材料"
-B = np.array([0.48, 0.32, 0.79, ...])  # "入职要准备哪些文件"
+A = np.array([0.5, 0.3, 0.8, ...])  # "报关需要什么材料"
+B = np.array([0.48, 0.32, 0.79, ...])  # "报关要准备哪些文件"
 
 cosine_sim = np.dot(A, B) / (np.linalg.norm(A) * np.linalg.norm(B))
 # 结果 ≈ 0.95（很高）
@@ -1262,14 +1256,14 @@ query → embedding → Top-K 向量检索 → metadata 过滤 → 返回候选�
 
 ```mermaid
 flowchart TD
-    Q["❓ 用户问题<br/>'入职需要准备什么材料'"] --> Dense["🧮 Dense 检索<br/>(BGE-M3 Embedding)"]
+    Q["❓ 用户问题<br/>'报关需要准备什么材料'"] --> Dense["🧮 Dense 检索<br/>(BGE-M3 Embedding)"]
     Q --> Sparse["📝 Sparse 检索<br/>(Milvus BM25)"]
 
-    Dense --> D1["语义理解<br/>→ '入职/报到/新员工'"]
+    Dense --> D1["语义理解<br/>→ '报关/资料提交/申报主体'"]
     D1 --> D2["同义词扩展<br/>→ '准备/提交/携带'"]
     D2 --> D3["✅ 优势：理解语义<br/>❌ 劣势：精确术语弱"]
 
-    Sparse --> S1["关键词匹配<br/>→ '入职' 命中 3 次"]
+    Sparse --> S1["关键词匹配<br/>→ '报关' 命中 3 次"]
     S1 --> S2["精确匹配<br/>→ 'HS编码8471.30' 精确命中"]
     S2 --> S3["✅ 优势：精确匹配<br/>❌ 劣势：不理解同义词"]
 
@@ -1288,14 +1282,14 @@ flowchart TD
 
 | ID | 内容 |
 | --- | --- |
-| D1 | "忘记密码时，可以通过绑定的邮箱或手机号自助重置" |
-| D2 | "管理员可以在后台重置任何用户的密码" |
-| D3 | "Webhook 回调地址配置在系统设置-集成管理页面" |
-| D4 | "API 密钥在个人设置-安全页面中生成和管理" |
+| D1 | "申报账号异常时，可以通过绑定的邮箱或手机号完成身份验证并恢复访问" |
+| D2 | "关务管理员可以在后台重置申报账号的访问凭据" |
+| D3 | "海关接口回调地址配置在报关系统的集成管理页面" |
+| D4 | "报关 API 密钥在贸易系统的安全设置页面中生成和管理" |
 
 ### 3.2 Dense 检索（语义相似度）
 
-用户提问：**"我怎么修改自己的登录密码"**
+用户提问：**"申报账号异常后如何恢复访问"**
 
 Dense 检索使用 Embedding 模型将问题和文档都转成向量，计算余弦相似度：
 
@@ -1306,11 +1300,11 @@ Dense 检索使用 Embedding 模型将问题和文档都转成向量，计算余
 问题向量   vs  D4 向量 → 相似度 0.22
 ```
 
-D1 排第一，因为"忘记密码→自助重置"与"修改登录密码"语义高度相关。
+D1 排第一，因为"账号异常→验证身份并恢复访问"与用户问题语义高度相关。
 
 **Dense 检索的优势**：
 - 理解语义，同义词和改写都能识别
-- "重置密码"、"修改密码"、"改密码"、"忘记密码怎么办"等表达都能召回
+- "恢复申报账号"、"重置访问凭据"、"申报账号异常怎么办"等表达都能召回
 
 **Dense 检索的局限**：
 - 对专业术语、编号、代码等精确匹配较弱
@@ -1321,7 +1315,7 @@ D1 排第一，因为"忘记密码→自助重置"与"修改登录密码"语义�
 Sparse 检索（本项目使用 BM25 算法）基于词频和逆文档频率，对关键词做精确匹配：
 
 ```text
-问题："API 密钥在个人设置-安全页面中生成和管理"
+问题："报关 API 密钥在贸易系统的安全设置页面中生成和管理"
 
 D4 包含：API(1次), 密钥(1次), 个人设置(1次), 安全页面(1次), 生成(1次), 管理(1次)
 → BM25 分数最高
@@ -1336,7 +1330,7 @@ D3 包含：Webhook(1次), 回调(1次), API(0次), 密钥(0次)
 - 计算效率高，不需要 GPU
 
 **Sparse 检索的局限**：
-- 无法理解语义：搜"修改密码"不会召回"忘记密码怎么办"
+- 无法理解语义：搜"恢复访问"不一定会召回"申报账号异常怎么办"
 - 同义词需要手动维护
 
 ### 3.4 Hybrid Search（混合检索）
@@ -1404,13 +1398,13 @@ Milvus 快速召回 20 条
 
 ```mermaid
 flowchart TD
-    Q["❓ 用户问题<br/>'入职流程有哪些步骤'"] --> EMB["🔤 BGE-M3 Embedding"]
+    Q["❓ 用户问题<br/>'HS 编码归类流程有哪些步骤'"] --> EMB["🔤 BGE-M3 Embedding"]
     EMB --> DV["📐 1024维 Dense 向量"]
 
     DV --> MH["🔍 Milvus 混合检索"]
 
     MH --> DENSE["📖 Dense 向量 → 语义相关的文档<br/>（制度、流程、注意事项）"]
-    MH --> SPARSE["📌 Sparse BM25 → 精确包含<br/>'入职''流程''步骤'的文档"]
+    MH --> SPARSE["📌 Sparse BM25 → 精确包含<br/>'报关''流程''步骤'的文档"]
 
     DENSE --> MERGE["🔄 合并去重"]
     SPARSE --> MERGE
@@ -1660,7 +1654,7 @@ sequenceDiagram
     participant H as SQLChatMessageHistory
     participant LLM as ChatOpenAI
 
-    U->>API: 入职流程有哪些步骤？
+    U->>API: HS 编码归类流程有哪些步骤？
     API->>LLM: [System, Human]
     LLM-->>API: AIMessage
     API->>H: 保存 Human + AI
@@ -1668,7 +1662,7 @@ sequenceDiagram
     U->>API: 那审批需要多久？
     API->>H: 读取最近历史
     API->>LLM: [System, Human, AI, Human]
-    LLM-->>API: 能理解“审批”指入职审批
+    LLM-->>API: 能理解“审批”指报关审批
 ```
 
 ### 3.2.1 History 不等于模型自带记忆
@@ -1721,7 +1715,7 @@ history = SQLChatMessageHistory(
     table_name="demo_chat_messages",
 )
 history.add_messages([
-    HumanMessage(content="新人入职流程有哪些？"),
+    HumanMessage(content="HS 编码归类流程有哪些？"),
     AIMessage(content="包括材料提交、合同签署和账号开通。"),
 ])
 
@@ -1753,9 +1747,9 @@ ChatHistoryStore.for_session()
 查询变体生成不能让模型自由发挥。自由文本会出现这些情况：
 
 ```text
-可以改写为：新人入职流程、入职办理步骤、入职 SOP。
-["新人入职流程", "入职办理步骤"]
-variants = 新人入职流程; 入职办理步骤
+可以改写为：HS 编码归类流程、报关办理步骤、报关 SOP。
+["HS 编码归类流程", "报关办理步骤"]
+variants = HS 编码归类流程; 报关办理步骤
 ```
 
 这些格式都不稳定。项目里使用 Pydantic 结构约束：
@@ -1771,14 +1765,14 @@ class QueryVariants(BaseModel):
 model = get_chat_model(streaming=False).with_structured_output(QueryVariants)
 decision = model.invoke([
     SystemMessage(content="请为用户问题生成 2-3 个等价查询变体。"),
-    HumanMessage(content="用户问题：入职流程有哪些步骤？"),
+    HumanMessage(content="用户问题：HS 编码归类流程有哪些步骤？"),
 ])
 ```
 
 返回值不是字符串，而是一个 Pydantic 对象：
 
 ```text
-decision.variants         # ["入职流程有哪些步骤？", "新人入职流程", ...]
+decision.variants         # ["HS 编码归类流程有哪些步骤？", "HS 编码归类流程", ...]
 ```
 
 这一步是 LangChain 在项目中非常关键的价值：**让 LLM 的输出进入可校验、可分支、可记录的工程世界**。
@@ -1873,8 +1867,8 @@ flowchart LR
 from langchain_core.documents import Document
 
 doc = Document(
-    page_content="入职流程包括提交材料、签订合同和账号开通。",
-    metadata={"source": "hr", "file_name": "入职制度.md"},
+    page_content="HS 编码归类流程包括提交材料、签订合同和账号开通。",
+    metadata={"source": "classification", "file_name": "商品归类规范.md"},
 )
 ```
 
@@ -1906,9 +1900,9 @@ Runnable 是 LangChain 的统一调用协议。无论 Prompt、Model、Parser，
 | `batch()` | 多个输入，批量处理 | 批量测试、批量解析、离线评测可用 |
 
 ```python
-response = model.invoke([HumanMessage(content="入职流程有哪些步骤？")])
+response = model.invoke([HumanMessage(content="HS 编码归类流程有哪些步骤？")])
 
-for chunk in model.stream([HumanMessage(content="入职流程有哪些步骤？")]):
+for chunk in model.stream([HumanMessage(content="HS 编码归类流程有哪些步骤？")]):
     print(chunk.content, end="")
 
 results = parser.batch([message_a, message_b, message_c])
@@ -1925,7 +1919,7 @@ from langchain_core.prompts import ChatPromptTemplate
 prompt = ChatPromptTemplate.from_template("用一句话回答：{question}")
 chain = prompt | model | StrOutputParser()
 
-answer = chain.invoke({"question": "入职流程有哪些步骤？"})
+answer = chain.invoke({"question": "HS 编码归类流程有哪些步骤？"})
 ```
 
 它适合简单线性任务：
@@ -2017,7 +2011,7 @@ for chunk in stream_llm_answer(system_prompt, user_prompt):
 - FAQ 标准答案直出
 - 意图识别
 - 追问改写
-- 多场景 source 过滤
+- 场景级 source 过滤
 - 知识库版本隔离
 - 风险 Prompt Profile
 - 引用来源补强
@@ -2792,7 +2786,7 @@ FAQ / 业务文档
 
 下面的能力属于后续企业级章节，本节只保留运行所需的最小接口，不展开其内部设计：
 
-- 多场景意图识别和网关仲裁；
+- 场景感知的意图识别、source 路由和网关仲裁；
 - Redis 缓存；
 - 多租户权限治理；
 - 知识库质量门禁和回滚；
@@ -2978,7 +2972,7 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8010
 ```text
 请只实现离线入库流程。
 
-输入：scenarios/enterprise_knowledge/faq.csv 和 data/ 下的业务文档。
+输入：scenarios/cross_border_risk/faq.csv 和 data/ 下的业务文档。
 
 要求：
 - FAQ 转换为包含 question、answer、source 的 Document；
@@ -3030,8 +3024,8 @@ python -m uvicorn app:app --host 127.0.0.1 --port 8010
 可以用下面的问题观察检索结果：
 
 ```text
-新人入职需要完成哪些流程？
-VPN 连不上怎么处理？
+跨境贸易资料审核需要完成哪些流程？
+报关系统连接不上怎么处理？
 预算超过部门额度时需要谁审批？
 ```
 
@@ -3184,8 +3178,8 @@ http://127.0.0.1:8010/
 也可以使用命令行：
 
 ```bash
-docker compose exec api python scripts/ask.py "新人入职需要完成哪些流程？"
-docker compose exec api python scripts/ask.py "VPN 连不上怎么处理？" --source-filter it
+docker compose exec api python scripts/ask.py "跨境贸易资料审核需要完成哪些流程？"
+docker compose exec api python scripts/ask.py "报关系统连接不上怎么处理？" --source-filter documents
 ```
 
 检查返回结果时，按下面顺序看：
@@ -3330,7 +3324,7 @@ mini-rag/app.py
 2. Reranker 负责候选集内的精排；
 3. LLM 只接收最终选出的上下文。
 
-## 十、本节验收清单
+## 十、本节单证审核清单
 
 ### 10.1 运行验收
 
@@ -3370,7 +3364,7 @@ docker compose ps
 
 | 本节 | 后续章节 |
 | --- | --- |
-| 单一`enterprise_knowledge`场景 | 第 05 讲开始学习多场景意图分类和路由 |
+| 单一`cross_border_risk`场景 | 第 05 章完善意图分类、source 路由与场景边界保护 |
 | 直接调用`pipeline.ask()` | 第 09、10 讲学习 QAService 和完整 Pipeline |
 | Dense + BM25 + Reranker | 第 06、07、08 讲逐项拆解检索计划、改写、变体和混合检索 |
 | 简单 active 版本 | 第 13、15、16 讲学习版本管理、入库流程和质量门禁 |
@@ -4212,13 +4206,13 @@ import numpy as np
 entities = [
     ["doc_001", "doc_002", "doc_003"],  # pk
     [
-        "入职流程包含以下步骤：1. 提交个人材料 2. 签订劳动合同 3. 办理社保",
-        "员工报销需要准备发票原件、报销申请单、部门审批签字",
-        "VPN 连接失败时，请先检查网络连接，然后尝试重启 VPN 客户端",
+        "HS 编码归类流程包含以下步骤：1. 提交商品与贸易资料 2. 签订贸易合同 3. 完成海关申报",
+        "跨境贸易报关需要准备商业发票、装箱单、合同和必要的审批记录",
+        "报关系统连接失败时，请先检查网络连接，然后尝试重启报关系统客户端",
     ],  # text
     np.random.rand(3, 1024).tolist(),     # dense 向量（实际由 BGE-M3 生成）
     [{} for _ in range(3)],               # sparse 手动占位；自动生成必须配置 3.8 的 BM25 Function
-    ["hr", "finance", "it"],              # source
+    ["customs", "classification", "documents"],              # source
     ["v1", "v1", "v1"],                   # kb_version
 ]
 
@@ -4241,7 +4235,7 @@ results = collection.search(
     anns_field="dense",
     param=search_params,
     limit=5,
-    expr='source == "hr"',            # 标量过滤
+    expr='source == "customs"',            # 标量过滤
     output_fields=["text", "source"],  # 返回字段
 )
 
@@ -4348,15 +4342,15 @@ collection.insert(
     [
         {
             "pk": "doc_001",
-            "text": "新人入职需要提交身份证、学历证明和银行卡信息。",
+            "text": "跨境贸易资料审核需要提交商品资料、原产地证和收款账户信息。",
             "dense": dense_vectors[0],  # 实际项目中由 BGE-M3 生成
-            "source": "hr",
+            "source": "customs",
         },
         {
             "pk": "doc_002",
-            "text": "报销需要发票、审批单和部门负责人签字。",
+            "text": "贸易结算需要发票、审批单和部门负责人签字。",
             "dense": dense_vectors[1],
-            "source": "finance",
+            "source": "documents",
         },
     ]
 )
@@ -4372,7 +4366,7 @@ dense_request = AnnSearchRequest(
     anns_field="dense",
     param={"metric_type": "COSINE", "params": {"ef": 64}},
     limit=20,
-    expr='source == "finance"',
+    expr='source == "documents"',
 )
 
 sparse_request = AnnSearchRequest(
@@ -4380,7 +4374,7 @@ sparse_request = AnnSearchRequest(
     anns_field="sparse",
     param={"metric_type": "IP"},
     limit=20,
-    expr='source == "finance"',
+    expr='source == "documents"',
 )
 
 results = collection.hybrid_search(
@@ -4685,7 +4679,7 @@ milvus_compat.py 表达"BM25 Function、database、连接参数在这里收口"
 在自然语言理解（NLU）中，**意图识别（Intent Classification）**是判断用户"想干什么"的技术。
 
 ```text
-用户说："入职流程有哪些步骤"
+用户说："HS 编码归类流程有哪些步骤"
 意图：知识咨询（KNOWLEDGE_QUERY）
 → 需要检索文档 + LLM 生成答案
 
@@ -4693,7 +4687,7 @@ milvus_compat.py 表达"BM25 Function、database、连接参数在这里收口"
 意图：问候（GREETING）
 → 直接返回问候语，不需要检索
 
-用户说："你好，新人入职流程有哪些？"
+用户说："你好，HS 编码归类流程有哪些？"
 意图：业务知识/FAQ 查询
 → 不能只当成问候，需要继续进入检索链路
 ```
@@ -4841,7 +4835,7 @@ flowchart TD
 ```bash
 python scripts\intent\train_intent_bert.py --train-data eval_sets/intent/train.jsonl --eval-data eval_sets/intent/eval.jsonl --epochs 10
 python scripts\intent\demo_intent_model.py --eval-only --output latest
-python scripts\intent\demo_intent_model.py "新人入职流程有哪些"
+python scripts\intent\demo_intent_model.py "HS 编码归类流程有哪些"
 python scripts\intent\demo_intent_model.py "那要谁审批" --has-history
 ```
 
@@ -5151,7 +5145,7 @@ warmup_intent_decision_gateway()
 预热动作会加载模型并执行一次样例预测：
 
 ```text
-prediction = model.predict("新人入职流程有哪些", has_history=False)
+prediction = model.predict("HS 编码归类流程有哪些", has_history=False)
 ```
 
 这能提前发现模型目录、标签文件、权重文件、设备参数等问题，也能避免首个在线请求承担冷启动成本。
@@ -5283,8 +5277,8 @@ Intent = Literal[
 | 路由层 | HUMAN\_SERVICE | "客服电话"、"转人工" | 直接返回联系方式 |
 | 路由层 | OUT\_OF\_SCOPE | "怎么买彩票" | 直接拒答 |
 | 检索层 | FOLLOW\_UP | "那审批呢"、"费用呢" | 先改写再检索，提高直出阈值 |
-| 检索层 | FAQ\_QUERY | "API 限流怎么办" | FAQ 优先，必要时再用文档补充 |
-| 检索层 | KNOWLEDGE\_QUERY | "入职流程有哪些步骤" | FAQ+文档都查，更多文档上下文 |
+| 检索层 | FAQ\_QUERY | "报关接口限流怎么办" | FAQ 优先，必要时再用文档补充 |
+| 检索层 | KNOWLEDGE\_QUERY | "HS 编码归类流程有哪些步骤" | FAQ+文档都查，更多文档上下文 |
 
 这样分层后，代码主线更清楚：直答问题在路由层已经结束；进入`classify_intent()`的问题默认就是需要检索的问题。
 
@@ -5297,11 +5291,11 @@ Intent = Literal[
 | 用户原话 | 业务有效问题 |
 | --- | --- | --- | --- |
 |`你好`|`你好`|
-|`你好，请问新人入职流程有哪些？`|`新人入职流程有哪些？`|
-|`您好，VPN 连不上怎么处理？`|`VPN 连不上怎么处理？`|
+|`你好，请问HS 编码归类流程有哪些？`|`HS 编码归类流程有哪些？`|
+|`您好，报关系统连接不上怎么处理？`|`报关系统连接不上怎么处理？`|
 |`麻烦帮我看下账号权限怎么申请`|`账号权限怎么申请`|
 
-这一步只处理常见问候和礼貌前缀，不会删除“转人工”“彩票”“合同风险”等业务或安全关键词。纯问候剥离后没有业务内容，因此保留原文，继续由 GREETING 规则直答。
+这一步只处理常见问候和礼貌前缀，不会删除“转人工”“彩票”“跨境贸易合同风险”等业务或安全关键词。纯问候剥离后没有业务内容，因此保留原文，继续由 GREETING 规则直答。
 
 ```python
 def normalize_user_query(query: str) -> str:
@@ -5598,7 +5592,7 @@ def _strong_rule_domain_intent(
     )).result
 ```
 
-这里的 4 类强规则不是互斥的。比如“新人入职流程有哪些？”既像标准问法，也包含“流程”这样的知识类关键词。系统会把命中的候选都收集起来，再用`rule_score + priority`做一次稳定选择：明确 FAQ 问法优先于泛知识关键词，同分时按照显式优先级保留业务排序。
+这里的 4 类强规则不是互斥的。比如“HS 编码归类流程有哪些？”既像标准问法，也包含“流程”这样的知识类关键词。系统会把命中的候选都收集起来，再用`rule_score + priority`做一次稳定选择：明确 FAQ 问法优先于泛知识关键词，同分时按照显式优先级保留业务排序。
 
 ### 4.2 各规则的关键词设计
 
@@ -5632,14 +5626,14 @@ DIRECT_FAQ_SHAPE_HINTS = re.compile(
 )
 ```
 
-这些是真实业务场景中更口语化的问法，比如"那隐蔽工程验收资料呢"、"API 限流导致接口失败怎么排查"。
+这些是真实业务场景中更口语化的问法，比如"那跨境贸易单证审核资料呢"、"报关接口限流导致申报失败怎么排查"。
 
 **KNOWLEDGE\_HINTS**— 触发知识文档检索：
 
 ```text
 KNOWLEDGE_HINTS = re.compile(
     r"(知识库|文档|手册|流程|制度|规范|说明|配置|接口|功能|"
-    r"排查|故障|步骤|sop|告警|巡检|设备|合规|条款|入职|"
+    r"排查|故障|步骤|sop|告警|核验|单证|合规|条款|报关|"
     r"审批|合同|隐私|webhook|回调|发票|账单)"
 )
 ```
@@ -5650,7 +5644,7 @@ KNOWLEDGE_HINTS = re.compile(
 
 注意规则分数的设计：`0.82 → 0.84 → 0.85 → 0.86`
 
-这不是随意设置的。宽泛 FAQ 关键词最低，知识类关键词居中，带业务 source 的明确 FAQ 问法更高。这样可以避免“流程、入职、文档”等泛知识词把“需要哪些材料、怎么办、是什么”这类标准问答误分到知识查询，同时仍然给规则判断留有余地（不设为 1.0 或 0.95）。
+这不是随意设置的。宽泛 FAQ 关键词最低，知识类关键词居中，带业务 source 的明确 FAQ 问法更高。这样可以避免“流程、报关、文档”等泛知识词把“需要哪些材料、怎么办、是什么”这类标准问答误分到知识查询，同时仍然给规则判断留有余地（不设为 1.0 或 0.95）。
 
 `rule_score`是入口规则候选分数，不是模型概率，也不是 Milvus 相似度。模型接入后，`confidence`表示规则候选和模型候选经过`apply_intent_decision_gateway()`仲裁后的最终决策分。第 06 章会消费这个最终分数：低分兜底或规则/模型冲突的问题会提高 FAQ 直出门槛、扩大文档召回，必要时只允许精确 FAQ 直出。
 
@@ -5705,7 +5699,7 @@ return IntentResult(
 
 ### 6.1 为什么需要 Source 推断
 
-用户在页面上提问时，不一定手动选择业务分类。系统需要自动判断"入职流程有哪些步骤"属于 HR 分类，"API 限流怎么办"属于 IT 分类。
+用户在页面上提问时，不一定手动选择业务分类。系统需要自动判断“HS 编码归类流程有哪些步骤”属于商品归类（`classification`），“报关接口限流怎么办”属于贸易单证与系统（`documents`）。
 
 前端也有业务分类下拉框，但很多用户不会手动选择。自动推断可以作为默认值，也可以作为前端选择的补充。
 
@@ -5721,7 +5715,7 @@ def infer_source(query: str, scenario: ScenarioDefinition) -> str | None:
     return best_source
 ```
 
-当前项目是多业务场景知识问答平台，`source`会参与 Milvus 过滤表达式和数据隔离，必须来自当前场景的`valid_sources`。新增业务分类时，只修改`scenario.toml`的`valid_sources`和`source_patterns`，不要在 Python 主链路里堆业务硬编码。
+当前项目只启用跨境贸易业务场景，`source`会参与 Milvus 过滤表达式和数据隔离，必须来自`cross_border_risk`的`valid_sources`。新增跨境贸易业务分类时，只修改`scenario.toml`的`valid_sources`和`source_patterns`，不要在 Python 主链路里堆业务硬编码；场景注册机制继续作为通用扩展能力保留。
 
 ### 6.3 Source Pattern 的评分算法
 
@@ -5736,11 +5730,11 @@ source_score = 命中次数 × 10 + 命中文本长度总和
 1. **命中次数是主证据**：同一个 source 命中多个业务词，通常比只偶然命中一个词更可信；乘以 10 是为了让次数在排序中占主导。
 2. **匹配长度用于细分**：命中次数相同时，更长、更具体的业务词获得少量优势。
 
-例如问题“员工入职需要哪些材料，同时如何报销”中，假设 HR 命中“员工、入职”两次、总长度 4，Finance 命中“报销”一次、长度 2：
+例如问题“企业报关资料提交需要哪些材料，同时如何贸易结算”中，假设 Customs 命中“申报主体、报关”两次、总长度 4，Documents 命中“贸易结算”一次、长度 2：
 
 ```text
-hr      = 2 × 10 + 4 = 24
-finance = 1 × 10 + 2 = 12
+customs = 2 × 10 + 4 = 24
+documents = 1 × 10 + 2 = 12
 ```
 
 `10`是规则基线权重，不是模型训练得到的概率。生产环境需要使用标注问题集观察 source 准确率、跨场景误报率和漏报率，再联合校准该权重以及`CURRENT_SCENARIO_SAFE_SCORE`、`MIN_OTHER_SCENARIO_SCORE`。
@@ -5778,9 +5772,9 @@ def score_source_matches(query: str, scenario: ScenarioDefinition) -> tuple[str 
 
 该算法只适合高确定性的业务关键词路由。它不表示语义概率，也不能替代 BERT 意图模型或 Milvus 语义检索。最终`suggested_source`仍会绑定租户、知识库版本和权限域进入检索过滤，不能跨数据域复用。
 
-### 6.4 跨场景边界为什么要比较双方分数
+### 6.4 可扩展场景边界为什么要比较双方分数
 
-跨场景判断不能采用“当前场景只要命中一个词就立即保留”的逻辑。问题可能同时包含当前场景的弱提示词和另一个场景的多个强提示词，例如用户在企业知识场景中问“入职后需要做安全技术交底和高处作业防护吗”。“入职”只弱命中 HR，而“安全、交底、高处作业、防护”明显属于工程安全资料。
+当前只注册跨境贸易场景，线上路由实际只在该场景的三个 source 之间判断。框架仍保留未来扩展场景时的边界比较能力：不能采用“当前场景只要命中一个词就立即保留”的逻辑，而要比较当前场景与候选场景的完整证据分数，避免单个弱提示词触发错误路由。
 
 项目使用三层条件：
 
@@ -6092,7 +6086,7 @@ QuestionCategory = Literal[
 它们不是互斥关系，而是可以叠加。比如：
 
 ```text
-报销费用超过5000需要谁审批
+跨境结算费用超过5000需要谁审批
 ```
 
 这句话可能同时触发：
@@ -6114,7 +6108,7 @@ faq_first_pricing_guard_table_row_preferred
 | 类别 | 典型问题 | 策略倾向 |
 | --- | --- | --- |
 | `default` | 普通业务问题 | 使用默认检索计划 |
-| `pricing` | 费用、金额、报销、付款 | 提高 FAQ 直出门槛，扩大候选 |
+| `pricing` | 费用、金额、贸易结算、付款 | 提高 FAQ 直出门槛，扩大候选 |
 | `compliance` | 合规、隐私、合同、审计 | 使用更高保护阈值 |
 | `troubleshooting` | 报错、失败、异常、排查 | 扩大文档候选，保留更多步骤 |
 | `summary` | 总结、归纳、对比、大纲 | 扩大文档候选，覆盖更多资料 |
@@ -6125,8 +6119,8 @@ faq_first_pricing_guard_table_row_preferred
 
 | 不是表格类问题 | 是表格类问题 |
 | --- | --- |
-| `报销流程是什么` | `报销材料清单里发票字段怎么填` |
-| `VPN 连不上怎么处理` | `故障台账里的责任人字段是谁` |
+| `跨境结算流程是什么` | `贸易结算材料清单里发票字段怎么填` |
+| `报关系统连接不上怎么处理` | `故障台账里的责任人字段是谁` |
 | `合同审批流程有哪些步骤` | `付款节点明细表里超过 5000 的审批要求是什么` |
 
 第 06 章只负责识别这种问题形态，并把保护信号写进`RetrievalPlan`；真正的表格文件加载、切分和入库在第 15 章，真正按计划执行 Milvus 检索在第 08 章。
@@ -6267,7 +6261,7 @@ build_answer_prompt_profile()
 付款节点明细有哪些
 ```
 
-这类问题最怕“看起来差不多”的误命中。比如 FAQ 里有“报销材料需要哪些”，但用户真正问的是“材料清单里的付款金额字段”，两者都和报销材料相关，却不是同一个答案。
+这类问题最怕“看起来差不多”的误命中。比如 FAQ 里有“贸易结算材料需要哪些”，但用户真正问的是“材料清单里的付款金额字段”，两者都和贸易结算材料相关，却不是同一个答案。
 
 所以本层会把检索计划改得更保守：
 
@@ -6341,11 +6335,11 @@ FAQ 和文档都多通常来自`intent=FOLLOW_UP`，比如用户在有历史上�
 
 风险类别不是新的用户意图，也不会直接决定最终答案分数。它是在已有检索倾向上继续加保险。
 
-例如`报销费用超过5000需要谁审批`可能先被识别为`FAQ_QUERY`，于是得到 FAQ 优先计划；但它又命中`pricing`风险类别，所以会继续叠加费用保护：
+例如`跨境结算费用超过5000需要谁审批`可能先被识别为`FAQ_QUERY`，于是得到 FAQ 优先计划；但它又命中`pricing`风险类别，所以会继续叠加费用保护：
 
 | 风险类别 | 典型词 | 保护动作 |
 | --- | --- | --- |
-| `pricing` | 费用、金额、报销、付款 | 提高 FAQ 直出门槛，扩大文档候选 |
+| `pricing` | 费用、金额、贸易结算、付款 | 提高 FAQ 直出门槛，扩大文档候选 |
 | `compliance` | 合规、隐私、审计、合同 | 使用更高直出阈值，避免草率回答 |
 | `troubleshooting` | 报错、失败、异常、排查 | 扩大文档候选，保留更多排障步骤 |
 | `summary` | 总结、归纳、对比、大纲 | 扩大文档候选，覆盖更多资料 |
@@ -6378,11 +6372,11 @@ faq_first_short_query_guard_pricing_guard
 
 | 问题类型 | 典型问法 | 核心参数变化 | 设计目的 |
 | --- | --- | --- | --- |
-| FAQ 查询 | `异地入职材料办理时需要准备哪些资料和审批信息` | `doc_top_k`从 20 收到 10；`use_query_variants=false`；基础 FAQ 直出阈值从 0.72 降到 0.64 | 先相信标准 FAQ，文档只作为兜底证据，避免简单问题走复杂链路 |
-| 知识查询 | `公司会议室预约规则在哪里查看以及需要遵守哪些流程要求` | `doc_top_k`提到 24；`final_context_top_n`提到 5；`use_query_variants=true` | 问题通常需要多段资料拼接，先扩大文档召回，再由后续章节生成更完整答案 |
+| FAQ 查询 | `异地报关资料办理时需要准备哪些资料和审批信息` | `doc_top_k`从 20 收到 10；`use_query_variants=false`；基础 FAQ 直出阈值从 0.72 降到 0.64 | 先相信标准 FAQ，文档只作为兜底证据，避免简单问题走复杂链路 |
+| 知识查询 | `跨境贸易单证提交规则在哪里查看以及需要遵守哪些流程要求` | `doc_top_k`提到 24；`final_context_top_n`提到 5；`use_query_variants=true` | 问题通常需要多段资料拼接，先扩大文档召回，再由后续章节生成更完整答案 |
 | 低决策分兜底 | `帮我分析一下这个问题` | `intent_rule_score=0.6`，`intent_decision_score=0.6`；`faq_direct_exact_only=true`；`faq_direct_threshold`至少 0.86；`final_context_top_n`至少 6 | 入口判断不够确定时，禁止模糊 FAQ 快速直出，优先收集更多证据 |
-| 追问 | `那审批呢`，历史问题是`报销流程是什么` | `faq_top_k=24`；`doc_top_k=24`；`faq_direct_threshold`至少 0.82；`use_query_variants=true` | 当前问题信息不足，必须依赖历史改写，并叠加决策分数保护，不能被短词误命中后直接回答 |
-| 费用类问题 | `报销费用超过5000需要谁审批` | `doc_top_k`至少 24；`final_context_top_n`至少 6；`faq_direct_threshold`至少 0.84 | 金额、报销、付款类问题错答成本高，宁愿多找证据，也不轻易 FAQ 模糊直出 |
+| 追问 | `那审批呢`，历史问题是`跨境结算流程是什么` | `faq_top_k=24`；`doc_top_k=24`；`faq_direct_threshold`至少 0.82；`use_query_variants=true` | 当前问题信息不足，必须依赖历史改写，并叠加决策分数保护，不能被短词误命中后直接回答 |
+| 费用类问题 | `跨境结算费用超过5000需要谁审批` | `doc_top_k`至少 24；`final_context_top_n`至少 6；`faq_direct_threshold`至少 0.84 | 金额、贸易结算、付款类问题错答成本高，宁愿多找证据，也不轻易 FAQ 模糊直出 |
 | 表格类问题 | `材料清单里的付款金额字段是什么` | `prefer_table=true`；`faq_direct_exact_only=true`；`final_context_top_n`至少 7 | 这类问题常藏在表格行、清单字段或台账明细里，必须抑制“相似 FAQ 直接回答” |
 
 这张表要注意两点。
@@ -6406,7 +6400,7 @@ doc_complex_query_top_k=24
 普通 FAQ 问题：
 
 ```text
-异地入职材料办理时需要准备哪些资料和审批信息
+异地报关资料办理时需要准备哪些资料和审批信息
 ```
 
 计划会偏向 FAQ：
@@ -6426,7 +6420,7 @@ doc_complex_query_top_k=24
 如果问题变成：
 
 ```text
-报销费用超过5000需要谁审批
+跨境结算费用超过5000需要谁审批
 ```
 
 计划会叠加费用保护：
@@ -6472,7 +6466,7 @@ cd D:\workspace\knowforge-rag-platform
 ### FAQ 查询
 
 ```bash
-python scripts\demo\demo_query_prepare.py "异地入职材料办理时需要准备哪些资料和审批信息" --plan-only
+python scripts\demo\demo_query_prepare.py "异地报关资料办理时需要准备哪些资料和审批信息" --plan-only
 ```
 
 关键输出：
@@ -6495,7 +6489,7 @@ python scripts\demo\demo_query_prepare.py "异地入职材料办理时需要准�
 ### 知识查询
 
 ```bash
-python scripts\demo\demo_query_prepare.py "公司会议室预约规则在哪里查看以及需要遵守哪些流程要求" --plan-only
+python scripts\demo\demo_query_prepare.py "跨境贸易单证提交规则在哪里查看以及需要遵守哪些流程要求" --plan-only
 ```
 
 关键输出：
@@ -6517,7 +6511,7 @@ python scripts\demo\demo_query_prepare.py "公司会议室预约规则在哪里�
 ### 追问
 
 ```bash
-python scripts\demo\demo_query_prepare.py "那审批呢" --history "报销流程是什么" --plan-only
+python scripts\demo\demo_query_prepare.py "那审批呢" --history "跨境结算流程是什么" --plan-only
 ```
 
 关键输出：
@@ -6540,7 +6534,7 @@ python scripts\demo\demo_query_prepare.py "那审批呢" --history "报销流程
 ### 费用类问题
 
 ```bash
-python scripts\demo\demo_query_prepare.py "报销费用超过5000需要谁审批" --plan-only
+python scripts\demo\demo_query_prepare.py "跨境结算费用超过5000需要谁审批" --plan-only
 ```
 
 关键输出：
@@ -6609,7 +6603,7 @@ python scripts\demo\demo_query_prepare.py "材料清单里的付款金额字段�
 | `faq_direct_score_threshold` | 0.72 | FAQ 相似直出的基础保护线 |
 | `short_query_guard_threshold` | 0.78 | 短问题更容易误命中，所以阈值更高 |
 | `medium_rule_score_direct_threshold` | 0.82 | 意图决策不够稳定时，进一步抬高 FAQ 直出门槛 |
-| `pricing_direct_threshold` | 0.84 | 金额、报销、付款类问题更谨慎 |
+| `pricing_direct_threshold` | 0.84 | 金额、贸易结算、付款类问题更谨慎 |
 | `compliance_direct_threshold` | 0.86 | 合规、隐私、合同类问题更谨慎 |
 | `low_rule_score_direct_threshold` | 0.86 | 默认兜底或规则/模型冲突问题只允许更谨慎的 FAQ 直出 |
 
@@ -6713,16 +6707,16 @@ python scripts\intent\evaluate_intent_policy.py --fail-on-critical
 在真实对话中，用户的后续问题往往依赖于前文的上下文：
 
 ```text
-用户：入职流程有哪些步骤？
-AI：入职流程包括：1. 提交材料 2. 签订合同 3. 部门审批 4. 领取工位...
+用户：HS 编码归类流程有哪些步骤？
+AI：HS 编码归类流程包括：1. 提交材料 2. 签订合同 3. 部门审批 4. 完成单证放行...
 
 用户：那审批需要多久？          ← 这是一个追问
       ↑ "那审批" 指的是什么审批？不结合历史无法理解
 ```
 
 如果直接把"那审批需要多久"发给 Milvus 做向量检索：
-- 检索到的可能是"请假审批"、"报销审批"、"采购审批"……
-- 因为向量只看到"审批"和"多久"，不知道上下文是"入职流程"
+- 检索到的可能是"报关审批"、"结算审批"、"单证审核"……
+- 因为向量只看到"审批"和"多久"，不知道上下文是"HS 编码归类流程"
 
 **这就是追问改写的必要性**：把依赖上下文的问题补全为独立的检索问题。
 
@@ -6731,8 +6725,8 @@ AI：入职流程包括：1. 提交材料 2. 签订合同 3. 部门审批 4. 领
 **指代消解（Anaphora Resolution）**是 NLP 的一个经典问题：确定代词或省略的主体指什么。
 
 ```text
-"那审批呢" → "那" 指代的是 入职流程中的审批步骤
-"费用呢"   → "费用" 需要结合上文确定是 入职费用 还是 培训费用
+"那审批呢" → "那" 指代的是 HS 编码归类流程中的审批步骤
+"费用呢"   → "费用" 需要结合上文确定是 报关费用 还是 运输费用
 "还有吗"   → 需要结合上文确定在问什么"还有"
 ```
 
@@ -6817,18 +6811,18 @@ REWRITE_SYSTEM_PROMPT = """
 
 示例：
 对话历史：
-用户：入职流程有哪些步骤
-AI：入职流程包括提交材料、签订合同、部门审批...
+用户：HS 编码归类流程有哪些步骤
+AI：HS 编码归类流程包括提交材料、签订合同、部门审批...
 
 当前问题：那审批呢
-改写后的检索问题：入职流程中的审批步骤是什么
+改写后的检索问题：HS 编码归类流程中的审批步骤是什么
 
 对话历史：
-用户：API 限流怎么处理
-AI：API 限流可以通过升级套餐或联系技术支持处理...
+用户：报关接口限流怎么处理
+AI：可以先核对申报服务状态、重试策略和贸易系统支持记录...
 
 当前问题：升级套餐多少钱
-改写后的检索问题：API 限流相关套餐的升级费用是多少
+改写后的检索问题：报关接口限流相关服务费用是多少
 """
 ```
 
@@ -6840,7 +6834,7 @@ history_text = format_messages(history_messages[-8:])  # 只取最近 8 条
 
 - **效率**：发送给 LLM 的 token 数减少，改写延迟降低
 - **聚焦**：只取最近的对话，让改写聚焦当前追问主题
-- **防止跑题**：如果用户 14 轮之前问的是"入职"，现在问的是"报销"，取全部历史反而会让改写混淆
+- **防止跑题**：如果用户 14 轮之前问的是"报关"，现在问的是"贸易结算"，取全部历史反而会让改写混淆
 
 ### 2.5 完整问题不改写的原则
 
@@ -6849,7 +6843,7 @@ if not should_rewrite or not history_messages:
     return query  # 直接返回原问题，不做任何修改
 ```
 
-对于完整、自包含的问题（如"入职流程有哪些步骤"、"API 密钥怎么生成"），保持原样是最好的做法。让 LLM 改写清晰的问题可能会导致"改偏"——原本明确的问题被改成模糊的。
+对于完整、自包含的问题（如"HS 编码归类流程有哪些步骤"、"API 密钥怎么生成"），保持原样是最好的做法。让 LLM 改写清晰的问题可能会导致"改偏"——原本明确的问题被改成模糊的。
 
 ---
 
@@ -6860,8 +6854,8 @@ if not should_rewrite or not history_messages:
 用户的问题表述方式可能和知识库中的表述不一致。例如：
 
 ```text
-用户问：新人入职当天要带什么
-知识库写：入职报到需提交的材料清单
+用户问：跨境贸易资料审核当天要带什么
+知识库写：报关资料提交需提交的材料清单
 ```
 
 虽然语义相近（Embedding 能找到），但关键词完全不同（BM25 找不到了）。
@@ -6869,13 +6863,13 @@ if not should_rewrite or not history_messages:
 **查询变体**的思路：把用户的原始问题扩展成多个等价表达，每个都去检索，提高命中率。
 
 ```text
-原始问题："新人入职当天要带什么"
+原始问题："跨境贸易资料审核当天要带什么"
 
 查询变体：
-  1. "新人入职当天要带什么"        ← 原问题
-  2. "入职报到需要提交哪些材料"    ← 正式表述
-  3. "入职当天需要准备什么文件"    ← 另一种问法
-  4. "入职需要携带的证件和材料"    ← 更具体的表述
+  1. "跨境贸易资料审核当天要带什么"        ← 原问题
+  2. "报关资料提交需要提交哪些材料"    ← 正式表述
+  3. "申报前需要准备什么文件"    ← 另一种问法
+  4. "报关需要携带的证件和材料"    ← 更具体的表述
 ```
 
 ### 3.2 两种生成方式
@@ -6989,7 +6983,7 @@ def _replace_term(query: str, old: str, new: str, rule: QueryVariantReplacementR
     return re.sub(re.escape(old), new, query, flags=re.IGNORECASE)
 ```
 
-上面`generate_query_variants()`在调用本地启发式之前，先通过`_looks_like_short_structured_question()`判断问题是否已经足够结构化，避免对清晰短问题做无收益的 LLM 扩展。追问改写结果例外：调用方会在`intent.intent == "FOLLOW_UP"`时传入`allow_short_structured=True`，让“报销流程是什么；追问：那审批呢”这类短句继续生成`SOP/处理步骤`等本地规则变体。这个判断同样读取`config/rules.toml`：
+上面`generate_query_variants()`在调用本地启发式之前，先通过`_looks_like_short_structured_question()`判断问题是否已经足够结构化，避免对清晰短问题做无收益的 LLM 扩展。追问改写结果例外：调用方会在`intent.intent == "FOLLOW_UP"`时传入`allow_short_structured=True`，让“跨境结算流程是什么；追问：那审批呢”这类短句继续生成`SOP/处理步骤`等本地规则变体。这个判断同样读取`config/rules.toml`：
 
 ```python
 # qa_core/pipeline/query_variants.py
@@ -7196,7 +7190,7 @@ flowchart TD
     Intent --> RewriteCheck{"requires_rewrite?"}
 
     RewriteCheck -->|"✅ 是"| Rewrite["📝 查询改写 (LLM)<br/>结合最近 8 条历史"]
-    Rewrite --> RWResult["'入职流程中的审批步骤是什么'"]
+    Rewrite --> RWResult["'HS 编码归类流程中的审批步骤是什么'"]
 
     RewriteCheck -->|"❌ 否"| PlanCheck
 
@@ -7205,7 +7199,7 @@ flowchart TD
 
     Plan --> VariantCheck{"use_query_variants?"}
     VariantCheck -->|"✅ 是"| GenVariants["🔀 生成查询变体<br/>规则 / LLM"]
-    GenVariants --> Variants["变体1: 入职审批流程<br/>变体2: 部门审批时长<br/>变体3: 入职审批步骤"]
+    GenVariants --> Variants["变体1: 报关审批流程<br/>变体2: 关务审核时长<br/>变体3: 报关审批步骤"]
 
     VariantCheck -->|"❌ 否"| SingleQ["仅用改写后问题"]
     Variants --> MultiSearch["🔍 多查询并行检索"]
@@ -7283,7 +7277,7 @@ flowchart LR
 
 **为什么是"摘要 + 最近 8 条"而不是"全部历史"？**如果 30 轮对话后还把全部历史发给 LLM，prompt 会膨胀到上万 token，不仅成本飙升，LLM 的注意力也会被稀释（中间偏早的对话细节会干扰当前问题的判断）。摘要把早期对话浓缩成一两句话，最近 8 条保留完整上下文——在"省 token"和"不丢信息"之间取得了平衡。
 
-**为什么最近保留 8 条而不是 3 条或 14 条？**这里的 8 条是项目默认值，不是行业标准。它的依据是：多轮追问经常跨越 4-5 轮（"入职需要什么材料"→"身份证复印件可以吗"→"电子版行不行"→"多久能办好"→"提前准备可以吗"），只保留 3 条容易丢指代；保留太多又会增加 prompt 成本并引入旧话题干扰。生产环境可以通过追问改写成功率、prompt 长度和用户会话统计继续调整。
+**为什么最近保留 8 条而不是 3 条或 14 条？**这里的 8 条是项目默认值，不是行业标准。它的依据是：多轮追问经常跨越 4-5 轮（"报关需要什么材料"→"商品资料复印件可以吗"→"电子版行不行"→"多久能办好"→"提前准备可以吗"），只保留 3 条容易丢指代；保留太多又会增加 prompt 成本并引入旧话题干扰。生产环境可以通过追问改写成功率、prompt 长度和用户会话统计继续调整。
 
 **代码实现**——两个核心方法对应上图的两个阶段：
 
@@ -7423,7 +7417,7 @@ docker compose --env-file .env.compose run --rm api python -c "from qa_core.conf
 
 期望看到：
 
-- `scenario`是当前业务场景，例如`enterprise_knowledge`
+- `scenario`是当前业务场景，例如`cross_border_risk`
 - `faq_collection`和`doc_collection`有明确名称
 - `active`不是`None`
 
@@ -7435,7 +7429,7 @@ docker compose --env-file .env.compose run --rm api python -c "from qa_core.conf
 docker compose --env-file .env.compose run --rm api python -c "from pymilvus import MilvusClient; from qa_core.config.settings import get_settings; s=get_settings(); c=MilvusClient(uri=s.milvus_uri); print(c.list_collections())"
 ```
 
-列表中应该包含当前场景的 FAQ/Doc collection。例如企业知识场景通常需要看到：
+列表中应该包含当前场景的 FAQ/Doc collection。例如跨境贸易场景通常需要看到：
 
 ```text
 enterprise_faq_hybrid_v1
@@ -7444,9 +7438,9 @@ enterprise_doc_hybrid_v1
 
 ### 0.4 如果没有数据，先做一次预置入库
 
-第二阶段不讲入库细节，但课前最好把 8 个业务场景一次性初始化好。
+第二阶段不展开入库细节，开始前需要先初始化当前跨境贸易场景。
 
-新环境首次初始化，或者之前改过 Milvus schema，使用`--reset-collections`重建全部 8 个场景：
+新环境首次初始化，或者之前改过 Milvus schema，使用`--reset-collections`重建当前跨境贸易场景：
 
 ```bash
 docker compose --env-file .env.compose up -d mysql etcd minio milvus
@@ -7454,24 +7448,24 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，批量刷新 8 个场景时不要删除 collection：
+如果之前已经存在知识库，只是资料内容变化，刷新跨境贸易场景时不要删除 collection：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
 ```
 
-批量脚本会逐个为 8 个冻结场景创建新知识库版本、强制入库、执行质量门禁并激活。这样项目阶段 08切换任意业务场景时，Milvus 都有可检索数据。
+当前注册表只包含`cross_border_risk`，批量脚本会为这一场景创建新知识库版本、强制入库、执行质量门禁并激活，确保项目阶段 08 可以直接检索跨境贸易数据。
 
-如果只想补一个场景，例如企业知识场景，也可以执行单场景预置：
+如果只想补一个场景，例如跨境贸易场景，也可以执行单场景预置：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 如果之前改过 Milvus schema，或者遇到 BM25 Function / sparse 字段不兼容，需要删除旧 collection 后重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 本节边界：
@@ -7498,7 +7492,7 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
 - FAQ collection 内部可以执行一次 Milvus Hybrid Search。
 - Doc collection 内部也可以执行一次 Milvus Hybrid Search。
 - 是否执行 FAQ、是否执行 Doc，由第 06 讲生成的`RetrievalPlan`决定。
-- 企业知识问答默认通常两路都查，因为 FAQ 提供标准口径，Doc 提供制度依据；但问候、越界、转人工、某些确定性直答问题不应该查知识库。
+- 跨境贸易知识问答默认通常两路都查，因为 FAQ 提供标准口径，Doc 提供制度依据；但问候、越界、转人工、某些确定性直答问题不应该查知识库。
 
 所以本项目的在线检索是两层结构：
 
@@ -7602,7 +7596,7 @@ def bm25_function():
     )
 ```
 
-`analyzer_params={"type": "chinese"}`确保 BM25 使用中文分词器（而不是默认的英文空格分词）。这样"企业知识库智能问答"会被正确拆分为"企业/知识库/智能/问答"，而不是按空格当成一个整体。
+`analyzer_params={"type": "chinese"}`确保 BM25 使用中文分词器（而不是默认的英文空格分词）。这样"跨境贸易知识库智能问答"会被正确拆分为"企业/知识库/智能/问答"，而不是按空格当成一个整体。
 
 ### 1.5 Milvus 内置 BM25 的优势
 
@@ -7790,7 +7784,7 @@ def build_source_expr(
     """把业务过滤条件转换为 Milvus 布尔表达式。
 
     表达式包含四类约束：
-    - source：业务分类，例如 hr、billing、alarm
+    - source：业务分类，例如 customs、classification、documents
     - kb_version：FAQ 按版本精确过滤；文档用它解析 active version_seq
     - tenant_id/dataset_id：轻量多租户和数据集隔离
     - visibility/allowed_roles：轻量可见性控制
@@ -7826,10 +7820,10 @@ def build_source_expr(
 对于一次具体的查询，过滤表达式可能长这样：
 
 ```text
-# FAQ 场景：HR 分类，active 版本，默认租户
+# FAQ 场景：关务 分类，active 版本，默认租户
 faq_expr = (
-    'source == "hr"'
-    ' and kb_version == "kb_enterprise_knowledge_20260506_103000_9f2a1b3c"'
+    'source == "customs"'
+    ' and kb_version == "kb_cross_border_risk_20260506_103000_9f2a1b3c"'
     ' and tenant_id == "default"'
     ' and dataset_id == "default"'
     ' and visibility in ["public", "internal"]'
@@ -7837,7 +7831,7 @@ faq_expr = (
 
 # 文档场景：按 active version_seq 解释有效期窗口
 doc_expr = (
-    'source == "hr"'
+    'source == "customs"'
     ' and (valid_from_seq <= 8 and (valid_to_seq == 0 or valid_to_seq > 8))'
     ' and tenant_id == "default"'
 )
@@ -7853,7 +7847,7 @@ def escape_expr_value(value: str) -> str:
     """转义 Milvus 表达式中的特殊字符。
 
     防止用户输入中包含双引号等特殊字符破坏表达式结构。
-    例如 source_filter='hr" or 1==1 or "' 这种注入尝试必须被转义。
+    例如 source_filter='customs" or 1==1 or "' 这种注入尝试必须被转义。
     """
     return str(value).replace('"', '\\"')
 ```
@@ -7866,7 +7860,7 @@ def escape_expr_value(value: str) -> str:
 
 ```mermaid
 flowchart TD
-    Input["输入：多个查询变体<br/>['入职流程步骤', '新人入职流程', '入职需要什么步骤']"]
+    Input["输入：多个查询变体<br/>['HS 编码归类流程步骤', 'HS 编码归类流程', '报关需要什么步骤']"]
 
     Input --> V1["变体1 检索<br/>Dense + Sparse Hybrid"] --> H1["Hits: doc_A(0.82), doc_B(0.75)"]
     Input --> V2["变体2 检索<br/>Dense + Sparse Hybrid"] --> H2["Hits: doc_A(0.76), doc_C(0.71)"]
@@ -7965,10 +7959,10 @@ def merge_hits_by_document(merged, hits):
 **为什么需要去重？**
 
 ```text
-用户问："入职流程有哪些步骤"
-变体 1："入职流程有哪些步骤" → 命中 chunk_A (分数 0.82)
-变体 2："入职需要做什么"     → 命中 chunk_A (分数 0.76)  ← 重复！
-变体 3："入职具体步骤"       → 命中 chunk_A (分数 0.79)  ← 重复！
+用户问："HS 编码归类流程有哪些步骤"
+变体 1："HS 编码归类流程有哪些步骤" → 命中 chunk_A (分数 0.82)
+变体 2："报关需要做什么"     → 命中 chunk_A (分数 0.76)  ← 重复！
+变体 3："报关具体步骤"       → 命中 chunk_A (分数 0.79)  ← 重复！
 
 去重后：chunk_A 只保留分数最高的那次 (0.82)
 ```
@@ -8371,7 +8365,7 @@ def stream_query(...):
 ### 3.3 前端接收到的体验
 
 ```text
-[0.0s] 用户点击发送 "入职流程有哪些步骤"
+[0.0s] 用户点击发送 "HS 编码归类流程有哪些步骤"
 [0.1s] 页面显示 "正在进行查询路由..."
 [0.5s] 页面显示 "正在识别问题意图..."
 [1.2s] 页面显示 "正在检索业务 FAQ 知识库..."
@@ -8885,10 +8879,10 @@ def _exact_faq_answer(query: str, faq_result: RetrievalResult) -> tuple[str | No
 
 ### 2.6.1 FAQ 快速探测未命中后的候选复用
 
-先用一个具体例子理解。用户问“新人入职需要完成哪些流程？”。路由层为了判断能否精确 FAQ 直出，已经用原问题查过一次 FAQ；结果没有找到完全相同的标准问题，于是进入完整 RAG。完整链路生成的变体可能是：
+先用一个具体例子理解。用户问“跨境贸易资料审核需要完成哪些流程？”。路由层为了判断能否精确 FAQ 直出，已经用原问题查过一次 FAQ；结果没有找到完全相同的标准问题，于是进入完整 RAG。完整链路生成的变体可能是：
 
 ```text
-["新人入职需要完成哪些流程？", "新人入职需要完成哪些 SOP？", "新员工需要办理哪些入职手续？"]
+["跨境贸易资料审核需要完成哪些流程？", "跨境贸易资料审核需要完成哪些 SOP？", "申报主体需要办理哪些出口海关备案手续？"]
 ```
 
 当前请求上下文会保存`fast_faq_result`、对应的`source_filter`和已取回的候选容量。复用条件成立时，完整检索读取原问题候选，只向 FAQ collection 查询两个新增变体：
@@ -9009,7 +9003,7 @@ class PromptProfile:
 | `FOLLOW_UP` | `follow_up` | 结合历史，但只回答当前追问焦点 |
 | 未知意图 | `default_answer` | 通用安全兜底 |
 
-风险类别优先于意图。例如“报销超过 5000 需要谁审批”可能被意图识别为`FAQ_QUERY`，但它同时属于费用类问题，因此最终使用`pricing_guard`，不能只使用普通 FAQ 模板。
+风险类别优先于意图。例如“贸易结算超过 5000 需要谁审批”可能被意图识别为`FAQ_QUERY`，但它同时属于费用类问题，因此最终使用`pricing_guard`，不能只使用普通 FAQ 模板。
 
 ### 3.4 build\_answer\_prompt\_profile() 的实际实现
 
@@ -9058,7 +9052,7 @@ def _scenario_prompt_context(scenario: ScenarioDefinition) -> dict[str, str]:
     }
 ```
 
-因此，同一套`knowledge_answer`模板可以用于人事、财务、IT 支持等场景，只需要从各自的`scenario.toml`注入不同的助手名称、业务域和人工支持联系方式。
+因此，同一套`knowledge_answer`模板统一服务跨境贸易场景，只需要从`cross_border_risk/scenario.toml`注入助手名称、业务域和人工支持联系方式；通用模板仍保留未来扩展能力。
 
 最终回答 Prompt 分为两部分：
 
@@ -9178,14 +9172,14 @@ def build_context(docs: list[Document]) -> str:
 输出示例：
 
 ```text
-[1] 来源：人事制度 / 入职管理
-入职流程包括以下步骤：1. 提交入职材料（身份证复印件、学历证书...）
+[1] 来源：关务制度 / 跨境贸易资料管理
+HS 编码归类流程包括以下步骤：1. 提交报关材料（商品资料复印件、原产地证...）
 
-[2] 来源：人事制度 / 审批权限
-部门经理负责审批本部门员工的入职申请，审批时限为 3 个工作日...
+[2] 来源：关务制度 / 关务关务审批权限
+关务负责人负责审批本批次申报，审批时限为 1 个工作日...
 
-[3] 来源：行政管理 / 工位分配
-新员工入职后由行政部统一分配工位和办公设备...
+[3] 来源：关务制度 / 申报任务分配
+出口资料提交后由关务团队统一分配申报任务和系统权限...
 ```
 
 ---
@@ -9232,7 +9226,7 @@ return AnswerPreparation(
 本章示例通过两种方式验证 Prompt：
 
 ```bash
-python scripts/demo_rag_pipeline.py "公司入职流程文档在哪里查看" --source hr --debug
+python scripts/demo_rag_pipeline.py "公司 HS 编码归类流程文档在哪里查看" --source classification --debug
 python -m unittest discover -s tests
 ```
 
@@ -9725,7 +9719,7 @@ sequenceDiagram
     participant QASvc as QAService
     participant Pipeline as RAG Pipeline
 
-    Browser->>WS: {"query": "入职流程有哪些步骤", ...}
+    Browser->>WS: {"query": "HS 编码归类流程有哪些步骤", ...}
     WS->>QASvc: stream_query(...)
     QASvc->>Pipeline: 创建生成器
 
@@ -9769,8 +9763,8 @@ sequenceDiagram
     "type": "start",
     "session_id": "abc123",
     "trace_id": "xyz789",
-    "scenario_id": "enterprise_knowledge",
-    "scenario_name": "企业内部知识助手",
+    "scenario_id": "cross_border_risk",
+    "scenario_name": "跨境贸易风险助手",
     "data_scope": {"tenant_id": "default", "dataset_id": "default"},
     "kb_version": "20260515_a1b2c3d4"
 }
@@ -9807,10 +9801,10 @@ sequenceDiagram
     "type": "end",
     "session_id": "abc123",
     "hit_type": "rag",
-    "answer": "入职流程包括以下步骤：1. 提交材料 ...",
+    "answer": "HS 编码归类流程包括以下步骤：1. 提交材料 ...",
     "sources": [
-        {"file_name": "入职流程.md", "source": "hr", "score": 0.92},
-        {"file_name": "FAQ", "standard_question": "入职需要哪些材料", "score": 0.88}
+        {"file_name": "HS 编码归类流程.md", "source": "classification", "score": 0.92},
+        {"file_name": "FAQ", "standard_question": "报关需要哪些材料", "score": 0.88}
     ],
     "answer_confidence": {
         "score": 0.82,
@@ -9856,7 +9850,7 @@ sequenceDiagram
     },
     "retrieval": {
         "plan": {"faq_top_k": 20, "doc_top_k": 20, "rerank": true},
-        "query_variants": ["入职流程", "入职步骤", "入职办理流程"],
+        "query_variants": ["HS 编码归类流程", "报关步骤", "报关办理流程"],
         "faq_elapsed_ms": 45.2,
         "doc_elapsed_ms": 120.5,
         "stage_timings_ms": {...},
@@ -10063,13 +10057,13 @@ flowchart LR
 
 ### 11.1 为什么不缓存 LLM 最终答案
 
-同一个用户问题，不一定应该得到同一个最终答案。例如都问“入职流程是什么？”，最终答案仍可能因为以下条件不同而不同：
+同一个用户问题，不一定应该得到同一个最终答案。例如都问“HS 编码归类流程是什么？”，最终答案仍可能因为以下条件不同而不同：
 
 - **知识库版本不同**：今天 active 版本是`kb_v1`，明天激活`kb_v2`，流程资料可能已经更新，复用旧答案会答错。
-- **权限不同**：普通员工只能看公开制度，HR 管理员可能能看到内部操作细则，复用管理员答案给普通员工就是权限泄露。
-- **租户或数据集不同**：A 公司和 B 公司都问“入职流程”，业务流程可能完全不同，跨租户复用会污染答案。
+- **权限不同**：普通申报主体只能看公开制度，关务 管理员可能能看到内部操作细则，复用管理员答案给普通申报主体就是权限泄露。
+- **租户或数据集不同**：A 公司和 B 公司都问“HS 编码归类流程”，业务流程可能完全不同，跨租户复用会污染答案。
 - **Prompt Profile 不同**：同样上下文，`knowledge_answer`可能要求总结口径，`troubleshooting_steps`可能要求步骤化排查，缓存答案会绕过当前模板要求。
-- **历史追问不同**：上一轮问的是“实习生入职”，下一轮问“需要哪些材料？”，答案依赖历史改写；这个答案不能给另一个没有相同历史上下文的人。
+- **历史追问不同**：上一轮问的是“新贸易主体海关备案”，下一轮问“需要哪些材料？”，答案依赖历史改写；这个答案不能给另一个没有相同历史上下文的人。
 
 这并不是说“大模型答案永远不能缓存”，而是说当前实现没有必要立刻增加这个复杂度。标准 FAQ 已经可以精确命中后直接返回，不进入 LLM；另外，查询 embedding 和 FAQ/Doc 检索结果已经能减少重复计算和 Milvus 访问。在还没有线上数据证明“最终生成是主要延迟和成本瓶颈”之前，先做稳定性和可观测性优先。
 
@@ -10108,7 +10102,7 @@ scenario + tenant_id + dataset_id + visibility + user_roles
 
 ### 11.2 Redis 是精确键缓存，不是模糊查询
 
-Redis 命中依赖结构化参数生成的稳定 hash。只有 query 文本/变体以及版本、权限、source、Top-K、重排开关和模型版本等维度全部一致，才会命中同一个 key；“新人入职怎么办”和“入职流程是什么”不会因为语义相近而互相命中。
+Redis 命中依赖结构化参数生成的稳定 hash。只有 query 文本/变体以及版本、权限、source、Top-K、重排开关和模型版本等维度全部一致，才会命中同一个 key；“跨境贸易资料审核怎么办”和“HS 编码归类流程是什么”不会因为语义相近而互相命中。
 
 因此它的命中率来自重复热点请求、前端快捷问题、会话重试和批量业务查询，不来自 Redis 模糊搜索。即使检索结果缓存未命中，完全相同的 query 文本仍可能命中 embedding 缓存，减少一次 BGE-M3 在线编码。当前实现不做语义答案缓存，因为语义近似阈值、知识版本和权限边界组合后更容易复用错误答案；需要提升长尾命中率时，应先基于 Trace 统计真实重复率，再决定是否引入带评测门禁的语义缓存。
 
@@ -10647,7 +10641,7 @@ sequenceDiagram
 
 # ↓ 告知前端：当前进行到哪一步了
 
-{"type": "token", "content": "入职"}
+{"type": "token", "content": "报关"}
 {"type": "token", "content": "流程"}
 {"type": "token", "content": "包括"}
 
@@ -10984,15 +10978,15 @@ PROMPT_PROFILES: dict[str, PromptProfile] = {
 # qa_core/prompts/selector.py
 def _scenario_prompt_context(scenario):
     return {
-        "assistant_name": scenario.assistant_name,      # "企业知识助手"
-        "business_domain": scenario.business_domain,    # "企业内部制度与流程"
+        "assistant_name": scenario.assistant_name,      # "跨境贸易知识助手"
+        "business_domain": scenario.business_domain,    # "跨境贸易规则、单证与合规流程"
         "industry": scenario.industry,                   # "企业服务"
         "support_contact": scenario.support_contact,    # "400-xxx-xxxx"
         "phone": scenario.support_contact,
     }
 ```
 
-这样同一套 Prompt 模板可以用于所有 8 个场景，只需配置不同的业务身份。
+这样当前 Prompt 模板统一服务跨境贸易场景，业务身份通过场景配置注入；通用框架仍保留扩展能力。
 
 ---
 
@@ -11207,7 +11201,7 @@ def build_answer_prompt_profile(intent, scenario, query):
 ### 5.1 身份明确
 
 ```text
-✅ "你是企业知识助手，专门解答企业内部制度与流程相关问题。"
+✅ "你是跨境贸易知识助手，专门解答跨境贸易规则、单证与合规流程相关问题。"
 ❌ "你是一个 AI 助手。"
 ```
 
@@ -11274,7 +11268,7 @@ def build_answer_prompt_profile(intent, scenario, query):
 考虑一个没有启动校验的服务：
 
 ```text
-服务启动 → 页面正常打开 → 用户提问"入职流程" → Milvus 连不上 → 报错
+服务启动 → 页面正常打开 → 用户提问"HS 编码归类流程" → Milvus 连不上 → 报错
                                     ↑
                             用户体验极差：页面看起来正常，实际不可用
 ```
@@ -11345,8 +11339,8 @@ settings = get_settings()
 logger = get_logger(__name__)
 
 app = FastAPI(
-    title="多场景知识问答平台 API",
-    description="LangChain + Milvus Hybrid 多场景智能问答系统",
+    title="跨境贸易知识问答平台 API",
+    description="LangChain + Milvus Hybrid 跨境贸易智能问答系统",
     lifespan=lifespan,
 )
 ```
@@ -11369,7 +11363,7 @@ class Settings(BaseSettings):
     reranker_model_path: str = "./models/bge-reranker-large"
     admin_api_token: str = ""
     active_kb_version: str = ""
-    active_scenario_id: str = "enterprise_knowledge"
+    active_scenario_id: str = "cross_border_risk"
     api_rate_limit_per_minute: int = 120
     # ... 还有更多字段
 
@@ -11459,7 +11453,7 @@ async def warmup_runtime() -> None:
 3. **`validate_active_kb_versions()`**：schema 就绪后再校验当前场景是否存在 active 知识库版本。
 4. **`warmup_intent_decision_gateway()`**：同步加载 BERT 意图模型，避免第一个用户请求承担意图模型冷启动。
 5. **`refresh_llm_status_background()`**：后台探测 LLM 真实连通性，把可用、欠费、网络失败等状态写入`/health`和状态页。
-6. **`start_retrieval_warmup_background()`+`wait_for_retrieval_warmup()`**：在线程中预热 BGE、Reranker 和全部场景 Milvus Collection，但`lifespan`的启动阶段会等待`ready`。预热失败或超时会让服务启动失败，不能把冷启动成本留给第一个用户。
+6. **`start_retrieval_warmup_background()`+`wait_for_retrieval_warmup()`**：在线程中预热 BGE、Reranker 和当前已配置场景 Milvus Collection，但`lifespan`的启动阶段会等待`ready`。预热失败或超时会让服务启动失败，不能把冷启动成本留给第一个用户。
 
 ### 2.6 路由注册
 
@@ -11658,13 +11652,13 @@ def validate_active_kb_versions(scenario_id: str | None = None) -> dict[str, obj
 
 ```python
 return {
-    "scenario_id": "enterprise_knowledge",
-    "scenario_name": "企业内部知识助手",
+    "scenario_id": "cross_border_risk",
+    "scenario_name": "跨境贸易风险助手",
     "milvus_uri": "http://127.0.0.1:19530",
     "mysql": "127.0.0.1:3306/subjects_kg",
     "embedding_model_path": "./models/bge-m3",
     "reranker_model_path": "./models/bge-reranker-large",
-    "available_scenarios": ["compliance_qa", "cross_border_risk", ...]
+    "available_scenarios": ["cross_border_risk"]
 }
 ```
 
@@ -11686,7 +11680,7 @@ BGE-M3 Embedding 模型和 Milvus 的连接初始化都有首次访问延迟：
 ```python
 # qa_core/retrieval/factory.py
 def warmup_retrieval_stack():
-    """预热全部已冻结场景的 BGE、Reranker 和 FAQ/Doc Collection。"""
+    """预热当前已配置场景的 BGE、Reranker 和 FAQ/Doc Collection。"""
     embeddings = get_embeddings()
     # 绕过 query Redis 缓存，确保首次真实编码和设备初始化已完成。
     getattr(embeddings, "base_embeddings", embeddings).embed_query(sample_query)
@@ -11754,7 +11748,7 @@ flowchart TD
 
 运行时环境变量存放的是"这个服务怎么跑"的基础设施配置——LLM API Key、Milvus 地址、MySQL 连接串、Admin Token、模型路径。本机 API 调试时，这些值来自`.env`；Docker Compose 运行时，这些值来自`.env.compose`注入到容器的环境变量。这些值的特点是：
 
-- **全局唯一**：不管切换到哪个业务场景，Milvus 地址和 LLM Key 都不会变
+- **全局唯一**：当前跨境贸易场景统一使用同一组 Milvus 地址和 LLM Key；后续扩展场景时也继续复用基础设施配置
 - **启动即加载**：通过 Pydantic BaseSettings 在应用启动时一次性读取并校验类型（端口号必须是 int、API Key 不能是占位符）
 - **全局单例访问**：任何模块需要基础设施配置时，调用`get_settings()`就能拿到同一个 Settings 实例，避免多处解析环境变量导致不一致
 
@@ -11762,7 +11756,7 @@ flowchart TD
 
 `scenarios/*/scenario.toml`存放的是"这个场景的业务是什么"的领域配置——scenario\_id、valid\_sources、FAQ collection 名称、source\_patterns。这些值的特点是：
 
-- **按场景变化**：`enterprise_knowledge`的 sources 是`["hr_process", "it_policy"]`，`compliance_qa`的 sources 是`["privacy", "audit", "contract"]`
+- **按场景变化**：当前`cross_border_risk`的 sources 是`["customs", "classification", "documents"]`；后续若扩展场景，只需为新场景配置自己的 source 列表。
 - **启动时扫描**：ScenarioRegistry 在启动时遍历`scenarios/`目录，把所有`scenario.toml`解析成`ScenarioDefinition`（frozen dataclass，创建后不可变）
 - **每次请求时解析**：QAService 根据用户请求中的`scenario_id`，从 Registry 中取出对应的 ScenarioDefinition，注入到后续的检索过滤和 Prompt 选择中
 
@@ -12219,7 +12213,7 @@ sequenceDiagram
 
 # ↓ 告知前端：当前进行到哪一步了
 
-{"type": "token", "content": "入职"}
+{"type": "token", "content": "报关"}
 {"type": "token", "content": "流程"}
 {"type": "token", "content": "包括"}
 
@@ -12465,7 +12459,7 @@ def enforce_http_rate_limit(request: Request) -> None:
 考虑一个没有启动校验的服务：
 
 ```text
-服务启动 → 页面正常打开 → 用户提问"入职流程" → Milvus 连不上 → 报错
+服务启动 → 页面正常打开 → 用户提问"HS 编码归类流程" → Milvus 连不上 → 报错
                                     ↑
                             用户体验极差：页面看起来正常，实际不可用
 ```
@@ -12536,8 +12530,8 @@ settings = get_settings()
 logger = get_logger(__name__)
 
 app = FastAPI(
-    title="多场景知识问答平台 API",
-    description="LangChain + Milvus Hybrid 多场景智能问答系统",
+    title="跨境贸易知识问答平台 API",
+    description="LangChain + Milvus Hybrid 跨境贸易智能问答系统",
     lifespan=lifespan,
 )
 ```
@@ -12560,7 +12554,7 @@ class Settings(BaseSettings):
     reranker_model_path: str = "./models/bge-reranker-large"
     admin_api_token: str = ""
     active_kb_version: str = ""
-    active_scenario_id: str = "enterprise_knowledge"
+    active_scenario_id: str = "cross_border_risk"
     api_rate_limit_per_minute: int = 120
     # ... 还有更多字段
 
@@ -12650,7 +12644,7 @@ async def warmup_runtime() -> None:
 3. **`validate_active_kb_versions()`**：schema 就绪后再校验当前场景是否存在 active 知识库版本。
 4. **`warmup_intent_decision_gateway()`**：同步加载 BERT 意图模型，避免第一个用户请求承担意图模型冷启动。
 5. **`refresh_llm_status_background()`**：后台探测 LLM 真实连通性，把可用、欠费、网络失败等状态写入`/health`和状态页。
-6. **`start_retrieval_warmup_background()`+`wait_for_retrieval_warmup()`**：在线程中预热 BGE、Reranker 和全部场景 Milvus Collection，但`lifespan`的启动阶段会等待`ready`。预热失败或超时会让服务启动失败，不能把冷启动成本留给第一个用户。
+6. **`start_retrieval_warmup_background()`+`wait_for_retrieval_warmup()`**：在线程中预热 BGE、Reranker 和当前已配置场景 Milvus Collection，但`lifespan`的启动阶段会等待`ready`。预热失败或超时会让服务启动失败，不能把冷启动成本留给第一个用户。
 
 ### 2.6 路由注册
 
@@ -12849,13 +12843,13 @@ def validate_active_kb_versions(scenario_id: str | None = None) -> dict[str, obj
 
 ```python
 return {
-    "scenario_id": "enterprise_knowledge",
-    "scenario_name": "企业内部知识助手",
+    "scenario_id": "cross_border_risk",
+    "scenario_name": "跨境贸易风险助手",
     "milvus_uri": "http://127.0.0.1:19530",
     "mysql": "127.0.0.1:3306/subjects_kg",
     "embedding_model_path": "./models/bge-m3",
     "reranker_model_path": "./models/bge-reranker-large",
-    "available_scenarios": ["compliance_qa", "cross_border_risk", ...]
+    "available_scenarios": ["cross_border_risk"]
 }
 ```
 
@@ -12877,7 +12871,7 @@ BGE-M3 Embedding 模型和 Milvus 的连接初始化都有首次访问延迟：
 ```python
 # qa_core/retrieval/factory.py
 def warmup_retrieval_stack():
-    """预热全部已冻结场景的 BGE、Reranker 和 FAQ/Doc Collection。"""
+    """预热当前已配置场景的 BGE、Reranker 和 FAQ/Doc Collection。"""
     embeddings = get_embeddings()
     # 绕过 query Redis 缓存，确保首次真实编码和设备初始化已完成。
     getattr(embeddings, "base_embeddings", embeddings).embed_query(sample_query)
@@ -12945,7 +12939,7 @@ flowchart TD
 
 运行时环境变量存放的是"这个服务怎么跑"的基础设施配置——LLM API Key、Milvus 地址、MySQL 连接串、Admin Token、模型路径。本机 API 调试时，这些值来自`.env`；Docker Compose 运行时，这些值来自`.env.compose`注入到容器的环境变量。这些值的特点是：
 
-- **全局唯一**：不管切换到哪个业务场景，Milvus 地址和 LLM Key 都不会变
+- **全局唯一**：当前跨境贸易场景统一使用同一组 Milvus 地址和 LLM Key；后续扩展场景时也继续复用基础设施配置
 - **启动即加载**：通过 Pydantic BaseSettings 在应用启动时一次性读取并校验类型（端口号必须是 int、API Key 不能是占位符）
 - **全局单例访问**：任何模块需要基础设施配置时，调用`get_settings()`就能拿到同一个 Settings 实例，避免多处解析环境变量导致不一致
 
@@ -12953,7 +12947,7 @@ flowchart TD
 
 `scenarios/*/scenario.toml`存放的是"这个场景的业务是什么"的领域配置——scenario\_id、valid\_sources、FAQ collection 名称、source\_patterns。这些值的特点是：
 
-- **按场景变化**：`enterprise_knowledge`的 sources 是`["hr_process", "it_policy"]`，`compliance_qa`的 sources 是`["privacy", "audit", "contract"]`
+- **按场景变化**：当前`cross_border_risk`的 sources 是`["customs", "classification", "documents"]`；后续若扩展场景，只需为新场景配置自己的 source 列表。
 - **启动时扫描**：ScenarioRegistry 在启动时遍历`scenarios/`目录，把所有`scenario.toml`解析成`ScenarioDefinition`（frozen dataclass，创建后不可变）
 - **每次请求时解析**：QAService 根据用户请求中的`scenario_id`，从 Registry 中取出对应的 ScenarioDefinition，注入到后续的检索过滤和 Prompt 选择中
 
@@ -13275,7 +13269,7 @@ and
 日常资料更新使用下面的命令：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这条命令会创建一个新的 STAGED 版本，并把当前 active 版本作为增量基准。代码入口在`scripts/rebuild_kb_version.py`，文档入库主逻辑在`qa_core/indexing/service.py`。
@@ -13347,10 +13341,10 @@ flowchart TD
 
 ```bash
 # 全量重建：适合初始化、schema 变化、模型变化后重建
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 
 # 引用式增量：适合日常资料新增、修改、删除
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 构建日志中会出现类似统计：
@@ -13375,25 +13369,25 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 
 | 文件 | v1 chunk | 有效期 |
 | --- | --- | --- |
-| `hr/onboarding.md` | `chunk_hr_v1` | `valid_from_seq=1, valid_to_seq=0` |
-| `it/vpn.md` | `chunk_vpn_v1` | `valid_from_seq=1, valid_to_seq=0` |
-| `finance/expense.md` | `chunk_expense_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `classification/classification.md` | `chunk_classification_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `documents/trade-system.md` | `chunk_documents_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `documents/settlement.md` | `chunk_settlement_v1` | `valid_from_seq=1, valid_to_seq=0` |
 
 现在基于 v1 构建 v2：
 
 | 文件 | v2 中的变化 | v2 的处理 |
 | --- | --- | --- |
-| `hr/onboarding.md` | 未变化 | v2 的 manifest 直接引用`chunk_hr_v1` |
-| `it/vpn.md` | 内容修改 | `chunk_vpn_v1.valid_to_seq=2`，再写入`chunk_vpn_v2` |
-| `finance/expense.md` | 删除 | `chunk_expense_v1.valid_to_seq=2` |
-| `legal/privacy.md` | 新增 | 写入`chunk_privacy_v2` |
+| `classification/classification.md` | 未变化 | v2 的 manifest 直接引用`chunk_classification_v1` |
+| `documents/trade-system.md` | 内容修改 | `chunk_documents_v1.valid_to_seq=2`，再写入`chunk_documents_v2` |
+| `documents/settlement.md` | 删除 | `chunk_settlement_v1.valid_to_seq=2` |
+| `documents/compliance.md` | 新增 | 写入`chunk_compliance_v2` |
 
 最终查询可见性是：
 
 | active 版本 | active\_seq | 可见内容 |
 | --- | --- | --- |
-| v1 | 1 | `hr/onboarding.md`、`it/vpn.md`、`finance/expense.md` |
-| v2 | 2 | `hr/onboarding.md`、`it/vpn.md`的新内容、`legal/privacy.md` |
+| v1 | 1 | `classification/classification.md`、`documents/trade-system.md`、`documents/settlement.md` |
+| v2 | 2 | `classification/classification.md`、`documents/trade-system.md`的新内容、`documents/compliance.md` |
 
 一句话理解：**v2 是一个完整的新版本视图，但它不要求所有文件都重新写向量；未变化文件只引用旧 chunk，变化或删除的旧 chunk 从 v2 开始失效。**
 
@@ -13426,7 +13420,7 @@ def generate_kb_version(prefix="kb", scenario_id=None) -> str:
     )[:8]  # 只取前 8 位
 
     return f"{prefix}_{scenario.scenario_id}_{stamp}_{config_hash}"
-    # 例：kb_enterprise_knowledge_20260506_103000_9f2a1b3c
+    # 例：kb_cross_border_risk_20260506_103000_9f2a1b3c
 ```
 
 ### 3.2 为什么版本号包含配置哈希
@@ -13434,8 +13428,8 @@ def generate_kb_version(prefix="kb", scenario_id=None) -> str:
 设计意图：从版本号可以直接判断两个版本是否使用同一套配置。
 
 ```text
-kb_enterprise_knowledge_20260506_103000_9f2a1b3c
-kb_enterprise_knowledge_20260507_150000_7d3e8f1a
+kb_cross_border_risk_20260506_103000_9f2a1b3c
+kb_cross_border_risk_20260507_150000_7d3e8f1a
                            不同日期 ↑         不同 hash ↑
 ```
 
@@ -13588,15 +13582,15 @@ def version_metadata(kb_version, scenario_id=None, *, version_seq=None):
 
 ```text
 chunk = Document(
-    page_content="入职流程包括以下步骤...",
+    page_content="HS 编码归类流程包括以下步骤...",
     metadata={
-        "source": "hr",
+        "source": "classification",
         "chunk_id": "abc123",
         "source_type": "doc",
         "record_type": "doc_chunk",
         "versioning_mode": "reference_incremental",
         "version_filter_mode": "validity_window",
-        "kb_version": "kb_enterprise_knowledge_20260507_150000_7d3e8f1a",
+        "kb_version": "kb_cross_border_risk_20260507_150000_7d3e8f1a",
         "valid_from_seq": 2,
         "valid_to_seq": 0,
         "embedding_model_version": "bge-m3-local-v1",
@@ -13623,13 +13617,13 @@ FAQ 和文档 chunk 都会携带`kb_version`、`valid_from_seq`、`valid_to_seq`
 
 ```text
 # FAQ 检索：按 active kb_version 精确过滤
-faq_expr = f'kb_version == "{active_version}" and source == "hr"'
+faq_expr = f'kb_version == "{active_version}" and source == "customs"'
 
 # 文档检索：按 active version_seq 解释引用式有效期视图
 doc_expr = (
     f'(valid_from_seq <= {active_seq} and '
     f'(valid_to_seq == 0 or valid_to_seq > {active_seq}))'
-    f' and source == "hr"'
+    f' and source == "customs"'
 )
 ```
 
@@ -13642,8 +13636,8 @@ doc_expr = (
 ```python
 # 评测脚本可以显式指定历史版本
 service.debug_retrieval(
-    query="入职流程有哪些步骤",
-    kb_version="kb_enterprise_knowledge_20260506_103000_9f2a1b3c",  # 旧版本
+    query="HS 编码归类流程有哪些步骤",
+    kb_version="kb_cross_border_risk_20260506_103000_9f2a1b3c",  # 旧版本
     ...
 )
 
@@ -13661,7 +13655,7 @@ for question in eval_set:
 这一部分是第 13 章需要和第 15、16 章衔接的地方：第 15 章负责把资料写入新版本，第 16 章负责解释质量报告如何检查；第 13 章负责解释为什么质量报告不通过时不能激活版本。
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 执行顺序：
@@ -13816,7 +13810,7 @@ flowchart TD
 
 | 入口 | 用途 | 适合场景 |
 | --- | --- | --- |
-| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 8 个冻结场景 | 新环境初始化、统一准备、Milvus schema 变更后全量修复 |
+| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 当前跨境贸易场景 | 新环境初始化、统一准备、Milvus schema 变更后的全量修复 |
 | `scripts/rebuild_kb_version.py` | 只重建单个业务场景 | 只修改了某个场景资料、验证单场景入库、定位某个场景问题 |
 
 如果在 Docker Compose 里执行入库命令，先确认项目根目录存在`.env.compose`。仓库只提交`.env.compose.example`，首次部署需要生成本地配置文件：
@@ -13832,7 +13826,7 @@ notepad .env.compose
 python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-它会对 8 个冻结场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
+它会对 当前跨境贸易场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
 
 在 Docker Compose 模式下，对应命令是：
 
@@ -13842,7 +13836,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，批量重建全部 8 个场景时不加`--reset-collections`：
+如果之前已经存在知识库，只是资料内容变化，批量重建当前跨境贸易场景时不加`--reset-collections`：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -13851,19 +13845,19 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_scena
 如果只重建一个场景，使用`scripts/rebuild_kb_version.py`：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 Docker Compose 模式下，对应命令是：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 企业中更常见的日常资料更新方式，是“构建阶段增量，查询阶段按有效版本视图读取”。如果当前 active 版本已经存在，且只是少量文件变化，可以创建新候选版本并基于 active 做跨版本增量构建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这条命令的语义是：FAQ 仍按新版本重建；文档先读取 active 版本的 MySQL IndexManifest，未变化文件直接引用旧版本 chunk，不复制 Milvus 行；变化文件让旧 chunk 从目标版本开始失效，再重新加载、切分、embedding；删除文件只写失效版本。在线查询按 active`version_seq`解释有效期视图。
@@ -13909,7 +13903,7 @@ and (valid_to_seq == 0 or valid_to_seq > active_seq)
 假设 active 版本序号是`8`，文档检索表达式为：
 
 ```text
-scenario_id == "enterprise_knowledge"
+scenario_id == "cross_border_risk"
 and valid_from_seq <= 8
 and (valid_to_seq == 0 or valid_to_seq > 8)
 ```
@@ -13925,12 +13919,12 @@ and (valid_to_seq == 0 or valid_to_seq > 8)
 
 这里的“旧 chunk”只来自本次增量基准版本的同路径 manifest，不是全历史版本扫描。也就是说，某个文件在第二个版本中修改时，只让第一个版本里被新版本继承的那批 chunk 从新版本开始不可见；更早或其他历史版本仍按自己的`active_seq`查询，不会被物理删除，也不会失去回滚价值。
 
-下面用一个具体例子看引用式增量怎么工作。假设企业知识库里有三份资料：
+下面用一个具体例子看引用式增量怎么工作。假设跨境贸易知识库里有三份资料：
 
 ```text
-hr_onboarding.md      入职流程
-it_vpn.md             VPN 处理
-finance_expense.md    报销流程
+classification/classification.md      HS 编码归类流程
+documents/trade-system.md             报关系统处理
+documents/settlement.md    跨境结算流程
 ```
 
 ### 首个版本：首次全量入库
@@ -13939,9 +13933,9 @@ finance_expense.md    报销流程
 
 | chunk\_id | 文件 | 内容摘要 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 入职需要提交身份证、银行卡、合同信息 | 1 | 0 |
-| `it_c1` | `it_vpn.md` | VPN 连不上先检查账号、网络和 MFA | 1 | 0 |
-| `fin_c1` | `finance_expense.md` | 报销流程包括提交单据、审批、财务复核 | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 商品归类需要提交商品资料、原产地信息和贸易合同 | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 报关系统连不上先检查账号、网络和 MFA | 1 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 跨境结算流程包括提交单据、审批、结算复核 | 1 | 0 |
 
 此时 active 版本序号是`1`，查询表达式是：
 
@@ -13953,26 +13947,26 @@ and (valid_to_seq == 0 or valid_to_seq > 1)
 能查到：
 
 ```text
-hr_c1, it_c1, fin_c1
+classification_c1, documents_c1, settlement_c1
 ```
 
-### 第二个版本：只修改 VPN 文档
+### 第二个版本：只修改报关系统文档
 
-后来 IT 更新了 VPN 文档，新增了“客户端版本检查”的要求。引用式增量不会复制 HR 和财务 chunk，只处理变化文件：
+后来贸易系统更新了报关系统文档，新增了“贸易系统版本检查”的要求。引用式增量不会复制归类和结算 chunk，只处理变化文件：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `it_c1` | `it_vpn.md` | 1 | 2 | 新版本开始不再使用旧 VPN 口径 |
-| 插入新 chunk | `it_c2` | `it_vpn.md` | 2 | 0 | 新 VPN 口径从第二个版本开始有效 |
+| 标记旧 chunk 失效 | `documents_c1` | `documents/trade-system.md` | 1 | 2 | 新版本开始不再使用旧报关系统口径 |
+| 插入新 chunk | `documents_c2` | `documents/trade-system.md` | 2 | 0 | 新报关系统口径从第二个版本开始有效 |
 
 Milvus 中现在一共有四条 chunk：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 |
-| `it_c1` | `it_vpn.md` | 1 | 2 |
-| `it_c2` | `it_vpn.md` | 2 | 0 |
-| `fin_c1` | `finance_expense.md` | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 0 |
 
 如果 active 版本序号切到`2`，查询表达式是：
 
@@ -13984,56 +13978,56 @@ and (valid_to_seq == 0 or valid_to_seq > 2)
 能查到：
 
 ```text
-hr_c1, it_c2, fin_c1
+classification_c1, documents_c2, settlement_c1
 ```
 
-注意：`hr_c1`和`fin_c1`没有复制一份到第二个版本，但它们仍然有效，因为`valid_to_seq = 0`。
+注意：`classification_c1`和`settlement_c1`没有复制一份到第二个版本，但它们仍然有效，因为`valid_to_seq = 0`。
 
-### 第三个版本：删除财务报销文档，新增差旅文档
+### 第三个版本：删除旧贸易结算文档，新增跨境结算规则文档
 
-再后来财务删除旧的报销流程文档，并新增差旅规则文档：
+再后来结算删除旧的跨境结算流程文档，并新增跨境结算规则文档：
 
 ```text
-删除：finance_expense.md
-新增：finance_travel.md
+删除：documents/settlement.md
+新增：documents/settlement_rules.md
 ```
 
 引用式增量处理如下：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `fin_c1` | `finance_expense.md` | 1 | 3 | v3 起旧报销资料不再可见 |
-| 插入新 chunk | `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 差旅规则从 v3 起生效 |
+| 标记旧 chunk 失效 | `settlement_c1` | `documents/settlement.md` | 1 | 3 | v3 起旧贸易结算资料不再可见 |
+| 插入新 chunk | `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 跨境结算规则从 v3 起生效 |
 
 如果 active 版本序号切到`3`，有效 chunk 是：
 
 ```text
-hr_c1, it_c2, fin_travel_c1
+classification_c1, documents_c2, settlement_rules_c1
 ```
 
 完整状态表如下：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | v1 可见 | v2 可见 | v3 可见 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 | 是 | 是 | 是 |
-| `it_c1` | `it_vpn.md` | 1 | 2 | 是 | 否 | 否 |
-| `it_c2` | `it_vpn.md` | 2 | 0 | 否 | 是 | 是 |
-| `fin_c1` | `finance_expense.md` | 1 | 3 | 是 | 是 | 否 |
-| `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 否 | 否 | 是 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 | 是 | 是 | 是 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 | 是 | 否 | 否 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 | 否 | 是 | 是 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 3 | 是 | 是 | 否 |
+| `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 否 | 否 | 是 |
 
 这个例子说明了引用式增量的关键点：
 
-1. 未变化资料不复制，例如`hr_c1`从 v1 一直被 v2、v3 复用。
+1. 未变化资料不复制，例如`classification_c1`从 v1 一直被 v2、v3 复用。
 2. 修改资料不是覆盖旧 chunk，而是让旧 chunk 在新版本前失效，再插入新 chunk。
 3. 删除资料不是立刻物理删除，而是写`valid_to_seq`，让它从某个版本开始不可见。
-4. 回滚时只需要把 active 版本序号从`3`切回`2`，`fin_c1`又会重新可见。
+4. 回滚时只需要把 active 版本序号从`3`切回`2`，`settlement_c1`又会重新可见。
 
 这种方案节省空间，也更适合大规模知识库。本项目已经把它作为版本治理能力实现：MySQL 版本表提供`version_seq`，文档 chunk 写入`valid_from_seq / valid_to_seq`，检索时用 active 版本序号解释有效版本视图。
 
 如果 Milvus Collection 的 schema 发生过变化，例如 sparse 字段从普通 SparseVector 改成 BM25 Function 输出字段，需要加上`--reset-collections`删除旧集合并重新建表：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 这里要区分两个参数：`--force`只是忽略文件指纹、强制把资料重新写入新版本；`--reset-collections`会删除 Milvus 里的 FAQ/Doc collection，让当前代码重新创建 schema。已有知识库只更新资料时，用`--force`，不要默认加`--reset-collections`。
@@ -14125,10 +14119,10 @@ FAQ 使用 CSV 文件管理，每行一个问答对：
 
 ```text
 source,question,answer
-hr,入职需要准备哪些材料,入职当天需要携带：身份证原件及复印件、学历证书复印件、离职证明、体检报告、银行卡信息...
-hr,试用期转正流程是什么,试用期转正流程：1. 员工提交转正申请 2. 直属领导评估 3. HR 审核 4. 部门负责人审批...
-it,VPN 连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换 VPN 节点...
-billing,如何申请发票,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
+customs,报关需要准备哪些材料,申报前需要携带：商业发票与装箱单、原产地证复印件、贸易合同、报关委托书、收款账户信息...
+customs,跨境贸易单证审核流程是什么,单证审核与放行流程：1. 申报主体提交放行申请 2. 关务负责人复核 3. 关务审核 4. 关务负责人确认...
+documents,报关系统连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换报关系统节点...
+documents,跨境结算发票如何申请,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
 ```
 
 ### 2.1.1 FAQ 入库流程图
@@ -14275,7 +14269,7 @@ document_parser_backend: str = Field(default="native", validation_alias="DOCUMEN
 
 | 值 | 含义 | 适用场景 |
 | --- | --- | --- |
-| `native` | 默认解析路径 | 8 个业务场景的常规资料、稳定验收、快速部署 |
+| `native` | 默认解析路径 | 跨境贸易业务场景的常规资料、稳定验收、快速部署 |
 | `docling` | 对 PDF/DOCX/PPTX/HTML 启用 Docling 增强解析 | 复杂版面 PDF、图文混排、表格版式复杂的资料 |
 
 注意：**CSV/Excel 不会交给 Docling**。本项目对业务表格采用行级 Document 设计，每一行都会保留`sheet_name`、`row_number`、表头和单元格键值。通用版面解析器可能把表格转成普通 Markdown 文本，反而削弱“按行定位、按行引用、按行回答”的业务能力。
@@ -14438,7 +14432,7 @@ class DoclingLoader:
 pip install -r requirements.txt
 $env:DOCUMENT_PARSER_BACKEND="docling"
 python scripts/tools/docling_parser_smoke.py
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 Docker Compose 环境：
@@ -14450,7 +14444,7 @@ docker compose --env-file .env.compose build api
 # 在 .env.compose 中设置
 # DOCUMENT_PARSER_BACKEND=docling
 
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 如果只是确认 Docling 是否能在当前环境解析文件，可以先运行：
@@ -14465,7 +14459,7 @@ python scripts/tools/docling_parser_smoke.py
 python scripts/tools/docling_parser_smoke.py --input 你的复杂版面资料.pdf
 ```
 
-如果只是使用 8 个默认业务场景和当前已整理好的多格式资料，保持：
+如果只是使用 当前跨境贸易业务场景和当前已整理好的多格式资料，保持：
 
 ```text
 DOCUMENT_PARSER_BACKEND=native
@@ -14496,7 +14490,7 @@ DOCUMENT_PARSER_BACKEND=native
 
 LlamaIndex 的`SimpleDirectoryReader`可以快速读取本地目录文件，`IngestionPipeline`可以把 transformations、embedding、缓存和向量库写入串起来。这些能力适合快速搭建 RAG 数据接入原型，也适合作为企业项目后续优化方向。
 
-但本项目没有把 LlamaIndex 接入本节主代码，原因是本节要讲清楚的是企业知识库入库治理，而不只是“把文件变成向量”。
+但本项目没有把 LlamaIndex 接入本节主代码，原因是本节要讲清楚的是跨境贸易知识库入库治理，而不只是“把文件变成向量”。
 
 | 对比点 | 本项目当前实现 | 如果直接换成 LlamaIndex |
 | --- | --- | --- |
@@ -14892,15 +14886,15 @@ for doc in documents:
 但 CSV / Excel 表格不是自然段，而是一条条**行记录**。一行里多个单元格共同表达一个完整业务事实：
 
 ```text
-材料名称=施工照片
+材料名称=报关资料截图
 状态=待补交
-责任人=项目经理
+责任人=关务负责人
 截止日期=2026-05-30
 ```
 
 如果把表格当普通文本递归切分，可能出现：
 
-- 检索命中了“施工照片”，但状态被切到另一个 chunk；
+- 检索命中了“报关资料截图”，但状态被切到另一个 chunk；
 - 检索命中了“金额”，但付款节点、责任人丢失；
 - 两行不同记录被拼到同一个 chunk，答案把 A 行状态说成 B 行状态；
 - 答案引用只能定位到文件，不能定位到工作表和行号。
@@ -14984,14 +14978,14 @@ content = "\n".join(
 生成后的正文类似：
 
 ```text
-表格文件：验收清单.xlsx
-工作表：材料验收
+表格文件：单证审核清单.xlsx
+工作表：材料审核
 表头：材料名称 / 状态 / 责任人 / 截止日期
 行号：3
 单元格：
-- 材料名称：施工照片
+- 材料名称：报关资料截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-30
 ```
 
@@ -15065,7 +15059,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 
 ```text
 用户问：验收材料清单里测试报告那一行是什么状态？
-相似 FAQ：验收需要提交哪些材料？
+相似 FAQ：单证审核需要提交哪些材料？
 
 这两个问题都包含“验收”“材料”“测试报告”，相似度可能不低。
 但 FAQ 回答的是材料范围，用户问的是某一行字段值。
@@ -15077,7 +15071,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 表格资料的答案必须能回到原始证据。当前项目在来源标签中追加工作表和行号：
 
 ```text
-[1] 验收清单.xlsx / 工作表：材料验收 / 第 3 行
+[1] 单证审核清单.xlsx / 工作表：材料审核 / 第 3 行
 ```
 
 另外，表格类问题经常涉及状态、金额、责任人、日期等精确值。LLM 有时会概括回答而漏掉某个关键单元格，所以项目里增加了表格行兜底：
@@ -15090,7 +15084,7 @@ def enforce_table_row_details(answer: str, context_docs: list[Document]) -> str:
 如果模型回答没有覆盖表格行里的核心字段，系统会追加：
 
 ```text
-表格行要点：状态：待补交；责任人：项目经理 [1]
+表格行要点：状态：待补交；责任人：关务负责人 [1]
 ```
 
 这不是替代 LLM，而是对表格精确字段的一层确定性保护。
@@ -15109,9 +15103,9 @@ Excel 和 CSV 入库可以概括为：
 
 ```text
 材料名称,状态,责任人,截止日期,备注
-施工图纸,已提交,设计负责人,2026-05-10,版本为 V3
-隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片
-验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021
+报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3
+单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片
+申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021
 ```
 
 下面这段代码用于在本地快速验证表格 loader 和切分策略。它不连接 Milvus，也不会改动线上知识库，只检查三件事：
@@ -15128,15 +15122,15 @@ from qa_core.indexing.table_documents import load_table_file
 from qa_core.intent.question_category import is_table_query
 
 
-csv_path = Path("reports/table_practice/acceptance_material_checklist.csv")
+csv_path = Path("reports/table_practice/customs_document_checklist.csv")
 csv_path.parent.mkdir(parents=True, exist_ok=True)
 csv_path.write_text(
     "\n".join(
         [
             "材料名称,状态,责任人,截止日期,备注",
-            "施工图纸,已提交,设计负责人,2026-05-10,版本为 V3",
-            "隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片",
-            "验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021",
+            "报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3",
+            "单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片",
+            "申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021",
         ]
     ),
     encoding="utf-8-sig",
@@ -15157,7 +15151,7 @@ print(chunks[1].page_content)
 print("第二条 chunk metadata：")
 print(chunks[1].metadata)
 
-query = "验收清单里隐蔽工程照片是什么状态，责任人是谁？"
+query = "单证审核清单里单证审核截图是什么状态，责任人是谁？"
 print("是否表格类问题：", is_table_query(query))
 ```
 
@@ -15172,14 +15166,14 @@ print("是否表格类问题：", is_table_query(query))
 第二条 chunk 的正文应该仍然保留完整行记录，类似：
 
 ```text
-表格文件：acceptance_material_checklist.csv
+表格文件：customs_document_checklist.csv
 工作表：csv
 表头：材料名称 / 状态 / 责任人 / 截止日期 / 备注
 行号：2
 单元格：
-- 材料名称：隐蔽工程照片
+- 材料名称：单证审核截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-18
 - 备注：缺少二层西侧照片
 ```
@@ -15199,19 +15193,19 @@ metadata 中至少要看到这些字段：
 如果要把这个 CSV 真正放进知识库，可以把文件移动到某个场景的数据目录，例如：
 
 ```text
-scenarios/engineering_project_qa/data/quality_data/acceptance_material_checklist.csv
+scenarios/cross_border_risk/data/customs_data/customs_document_checklist.csv
 ```
 
 然后执行单场景重建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-version --force --quality-gate --activate --description "table row ingestion practice"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "table row ingestion practice"
 ```
 
 入库后可以用检索诊断或页面提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 期望链路是：
@@ -15226,7 +15220,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 如果模型漏掉状态或责任人，后处理追加表格行要点
 ```
 
-建议把它放到工程项目资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
+建议把它放到跨境贸易资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
 
 | 检查点 | 期望结果 | 为什么检查 |
 | --- | --- | --- |
@@ -15238,13 +15232,13 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 可以在页面或接口中提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 理想回答应该包含：
 
 - 状态是“待补交”；
-- 责任人是“项目经理”；
+- 责任人是“关务负责人”；
 - 引用来源能定位到 CSV/Excel 的对应行；
 - 如果模型遗漏状态或责任人，系统会追加“表格行要点”。
 
@@ -15281,7 +15275,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 
 | 概念 | 保存位置 | 作用 |
 | --- | --- | --- |
-| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_enterprise_knowledge_20260618_xxx`。 |
+| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_cross_border_risk_20260618_xxx`。 |
 | Manifest 记录 | MySQL`kb_document_manifests` | 记录某个文件在某个`kb_version`下生成了哪些 chunk，用于判断下次是否可以跳过、复用或重建。 |
 | Milvus chunk | Milvus collection | 保存真正用于检索的文本、向量和 metadata。 |
 
@@ -15403,7 +15397,7 @@ if (
 这是更常见的企业发布方式：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这时目标版本是新的，例如：
@@ -15469,24 +15463,24 @@ if not existing and base_record and _manifest_matches_current_settings(base_reco
 
 | 文件 | `kb_v1`Manifest | 状态 |
 | --- | --- | --- |
-| `hr/onboarding.md` | chunk`[hr_1, hr_2]` | 未变化 |
-| `finance/expense.md` | chunk`[fin_1, fin_2]` | 内容修改 |
-| `finance/budget_preapproval_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
+| `classification/classification.md` | chunk`[classification_1, classification_2]` | 未变化 |
+| `documents/settlement.md` | chunk`[settlement_1, settlement_2]` | 内容修改 |
+| `documents/settlement_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
 
 现在执行：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 系统创建新版本`kb_v2`，处理结果如下：
 
 | 文件 | 处理方式 | `kb_v2`结果 |
 | --- | --- | --- |
-| `hr/onboarding.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到入职资料，且不重新 embedding、不复制向量。 |
-| `finance/expense.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的报销资料内容。 |
-| `finance/budget_preapproval_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
-| 新增`it/vpn.md` | 重新加载、切分、embedding | `kb_v2`新增 VPN 资料。 |
+| `classification/classification.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到商品归类资料，且不重新 embedding、不复制向量。 |
+| `documents/settlement.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的贸易结算资料内容。 |
+| `documents/settlement_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
+| 新增`documents/trade-system.md` | 重新加载、切分、embedding | `kb_v2`新增报关系统资料。 |
 
 最终线上激活后，文档检索按 active 版本序号解释有效期视图：
 
@@ -15598,10 +15592,10 @@ class IndexManifest(_MySqlStore):
 
 ```bash
 # 预览将要清理的内容（默认 dry-run）
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk
 
 # 实际执行清理
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge --no-dry-run
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk --no-dry-run
 ```
 
 ### 7.2 cleanup\_missing\_document\_chunks 原理
@@ -15665,7 +15659,7 @@ def cleanup_missing_document_chunks(
 
 ### 8.1 这属于多模态吗
 
-导入文档中同时存在文字、图片、截图、扫描页、流程图、设备照片时，本质上已经进入了**多模态资料处理**范围。
+导入文档中同时存在文字、图片、截图、扫描页、流程图、货物照片时，本质上已经进入了**多模态资料处理**范围。
 
 但在当前一期项目里，它应该被定位为：
 
@@ -15687,7 +15681,7 @@ def cleanup_missing_document_chunks(
 
 - 合同扫描件；
 - 审批截图；
-- 设备告警截图；
+- 报关系统告警截图；
 - 流程图；
 - 验收照片；
 - 表格截图；
@@ -15723,7 +15717,7 @@ def cleanup_missing_document_chunks(
 如果后续引入 VLM 和图文块，再升级为：
 
 ```text
-图片/流程图/设备照片
+图片/流程图/货物照片
   -> OCR 或 VLM 生成候选说明
   -> 绑定附近正文、页码、图片编号
   -> 人工复核
@@ -15745,7 +15739,7 @@ def cleanup_missing_document_chunks(
 
 ```bash
 python scripts/ocr/run_offline_ocr.py --input-dir incoming_scans --output-dir reports/ocr/batch_001
-python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario engineering_project_qa --source quality --apply
+python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario cross_border_risk --source documents --apply
 ```
 
 第一条命令只生成待复核资料，第二条命令才把复核后的 Markdown 提升到场景资料目录。提升后仍然要执行知识库版本重建、入库质量检查和 RAG 回归验收。
@@ -15853,7 +15847,7 @@ BM25 Function / sparse 字段不兼容
 通常表示复用了旧 schema collection。处理方式是删除旧 collection 并重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 排查口径：
@@ -15883,7 +15877,7 @@ GET /api/admin/ingestion_report_detail?path=<report_path>
 
 列表接口返回报告摘要，详情接口返回完整 JSON；接口只允许访问`reports/ingestion/`目录内的报告文件。
 
-不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低质量资料只能停留在 STAGED，不会进入 active 知识库。
+不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低审核资料只能停留在 STAGED，不会进入 active 知识库。
 
 ### 9.5 重建后页面还是旧答案
 
@@ -15900,9 +15894,9 @@ docker logs -f knowforge-api
 
 1. 是否有多个 Milvus 实例：宿主机脚本连的是`127.0.0.1:19530`，容器内脚本连的是`http://milvus:19530`。要确认两者指向同一个 Docker Compose 服务。
 
-### 9.6 八场景全量初始化的推荐命令
+### 9.6 跨境贸易场景全量初始化的推荐命令
 
-如果需要在新环境中一次性把全部 8 个场景初始化到可运行状态，使用：
+如果需要在新环境中一次性把当前跨境贸易场景初始化到可运行状态，使用：
 
 ```powershell
 if (!(Test-Path .env.compose)) { Copy-Item .env.compose.example .env.compose }
@@ -15912,7 +15906,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，重建全部 8 个场景时不要删除 collection：
+如果之前已经存在知识库，只是资料内容变化，重建当前跨境贸易场景时不要删除 collection：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -15973,8 +15967,8 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_scena
 | --- | --- | --- |
 | 租户隔离 | A 公司能看到 B 公司的资料吗？ | `tenant_id="company_a"`不应查到`tenant_id="company_b"`的数据 |
 | 数据集隔离 | 生产环境和测试环境的数据混查？ | `dataset_id="production"`不应查到`dataset_id="test"`的数据 |
-| 可见性 | 实习生能看到高管会议纪要吗？ | `visibility="restricted"`的内容不应被普通员工检索到 |
-| 角色隔离 | HR 能看到财务数据吗？ | HR 角色不应查到`allowed_roles=["finance_admin"]`的数据 |
+| 可见性 | 实习生能看到高管会议纪要吗？ | `visibility="restricted"`的内容不应被普通申报主体检索到 |
+| 角色隔离 | 关务人员能看到结算数据吗？ | 关务角色不应查到`allowed_roles=["trade_settlement_admin"]`的数据 |
 
 ---
 
@@ -16027,7 +16021,7 @@ class DataScope:
 flowchart TD
     P["public<br/>公司公告 / 公开制度 / 产品手册"]
     I["internal<br/>部门流程文档 / 操作手册 / 内部培训资料"]
-    R["restricted<br/>高管会议纪要 / 薪酬方案 / 未公开合同条款"]
+    R["restricted<br/>高管会议纪要 / 结算方案 / 未公开合同条款"]
     A1["public 用户<br/>仅 public"]
     A2["internal 用户<br/>public + internal"]
     A3["restricted 用户<br/>全部三级"]
@@ -16054,7 +16048,7 @@ flowchart TD
 | --- | --- | --- |
 | `public` | 公司公告、公开制度、产品手册 | **所有人**（包括未登录用户） |
 | `internal` | 部门流程文档、操作手册、内部培训资料 | internal 用户 + restricted 用户（**包含**public 内容） |
-| `restricted` | 高管会议纪要、薪酬方案、未公开合同 | 仅 restricted 用户（**包含**public + internal 内容） |
+| `restricted` | 高管会议纪要、结算方案、未公开合同 | 仅 restricted 用户（**包含**public + internal 内容） |
 
 关键的包含关系：`public ⊂ internal ⊂ restricted`。箭头从外指向内（"包含于"），而不是从内指向外。这个设计意味着：
 
@@ -16079,7 +16073,7 @@ flowchart TD
     Dim1 --> Expr1["tenant_id 等于 company_a"]
     Dim2 --> Expr2["dataset_id 等于 production"]
     Dim3 --> Expr3["visibility 允许 public 和 internal"]
-    Dim4 --> Expr4["allowed_roles 包含 employee"]
+    Dim4 --> Expr4["allowed_roles 包含 trade_operator"]
 
     Expr1 --> Merge["AND 拼接"]
     Expr2 --> Merge
@@ -16101,12 +16095,12 @@ flowchart TD
 | 租户隔离 | `tenant_id` | 不同公司/部门的数据不能互查 | `"company_a"`,`"company_b"` |
 | 数据集隔离 | `dataset_id` | 同一租户下，生产数据和测试数据不能混 | `"production"`,`"staging"`,`"default"` |
 | 可见级别 | `visibility` | 同一数据集下，敏感资料仅限特定用户 | `"public"`,`"internal"`,`"restricted"` |
-| 角色控制 | `allowed_roles` | 同一可见级别下，特定角色才能访问 | `["legal", "hr", "admin"]` |
+| 角色控制 | `allowed_roles` | 同一可见级别下，特定角色才能访问 | `["customs_admin", "trade_operator", "admin"]` |
 
 四个维度从上到下逐步收紧：先限定租户（最粗粒度），再限定数据集，再限定可见级别，最后检查角色。最终拼成的 Milvus 表达式类似：
 
 ```text
-tenant_id == "company_a" && dataset_id == "production" && visibility in ["public", "internal"] && array_contains(allowed_roles, "employee")
+tenant_id == "company_a" && dataset_id == "production" && visibility in ["public", "internal"] && array_contains(allowed_roles, "trade_operator")
 ```
 
 **为什么不用一个大而全的字段（如 access\_level）把四个维度都编码进去？**因为运维场景中这四个维度的管理节奏完全不同：
@@ -16148,11 +16142,11 @@ def resolve_data_scope(
 # 文档入库时
 chunk_metadata = {
     "chunk_id": "abc123",
-    "source": "hr",
+    "source": "classification",
     "tenant_id": "company_a",         # 租户
     "dataset_id": "production_v2",    # 数据集
     "visibility": "internal",         # 可见级别
-    "allowed_roles": ["employee", "manager", "hr_admin"],  # 允许的角色
+    "allowed_roles": ["trade_operator", "customs_manager", "customs_admin"],  # 允许的角色
     "kb_version": "kb_...",
     ...
 }
@@ -16160,11 +16154,11 @@ chunk_metadata = {
 # FAQ 入库时
 faq_metadata = {
     "faq_id": "faq_001",
-    "source": "billing",
+    "source": "documents",
     "tenant_id": "company_a",
     "dataset_id": "production_v2",
     "visibility": "internal",
-    "allowed_roles": ["employee", "billing_admin"],
+    "allowed_roles": ["operator", "trade_settlement_admin"],
     "kb_version": "kb_...",
     ...
 }
@@ -16175,12 +16169,12 @@ faq_metadata = {
 ```text
 # ingest_directory() 接收完整的隔离参数
 ingest_directory(
-    directory_path="scenarios/enterprise_knowledge/data/hr_data",
-    source="hr",
+    directory_path="scenarios/cross_border_risk/data/classification_data",
+    source="classification",
     tenant_id="company_a",
     dataset_id="production_v2",
     visibility="internal",
-    allowed_roles=["employee", "manager", "hr_admin"],
+    allowed_roles=["trade_operator", "customs_manager", "customs_admin"],
     kb_version=current_version,
 )
 ```
@@ -16209,7 +16203,7 @@ if data_scope:
 
 # 最终表达式
 expr = " and ".join(clauses)
-# 结果：'source == "hr" and kb_version == "kb_xxx" and tenant_id == "company_a" and dataset_id == "production_v2" and visibility in ["public", "internal"] and array_contains(allowed_roles, "employee")'
+# 结果：'source == "classification" and kb_version == "kb_xxx" and tenant_id == "company_a" and dataset_id == "production_v2" and visibility in ["public", "internal"] and array_contains(allowed_roles, "trade_operator")'
 ```
 
 ### 4.2 在前端请求中传入隔离参数
@@ -16217,15 +16211,15 @@ expr = " and ".join(clauses)
 ```text
 // WebSocket 请求
 {
-    "query": "入职流程有哪些步骤",
+    "query": "HS 编码归类流程有哪些步骤",
     "session_id": "...",
-    "scenario_id": "enterprise_knowledge",
-    "source_filter": "hr",
+    "scenario_id": "cross_border_risk",
+    "source_filter": "classification",
     "tenant_id": "company_a",
     "dataset_id": "production_v2",
     "visibility": "internal",
-    "user_role": "employee",
-    "user_roles": ["employee", "manager"]
+    "user_role": "trade_operator",
+    "user_roles": ["trade_operator", "customs_manager"]
 }
 ```
 
@@ -16238,9 +16232,9 @@ expr = " and ".join(clauses)
 Milvus 的过滤表达式是一个类 SQL 的字符串。如果直接把用户输入拼入表达式，存在注入风险：
 
 ```text
-# 危险！如果用户输入 source_filter = 'hr" or 1==1 or "'
+# 危险！如果用户输入 source_filter = 'customs" or 1==1 or "'
 expr = f'source == "{source_filter}"'
-# 结果：source == "hr" or 1==1 or "" → 绕过了 source 过滤！
+# 结果：source == "customs" or 1==1 or "" → 绕过了 source 过滤！
 ```
 
 ### 5.2 escape\_expr\_value() 实现
@@ -16306,15 +16300,15 @@ def build_source_expr(source_filter, kb_version=None, data_scope=None):
 
 ## 第七部分：场景配置全貌 — 如何维护既有业务场景
 
-虽然本节的主题是数据隔离，但数据隔离和场景配置是紧密相关的。一个业务场景的完整配置决定了它的 source 白名单、数据范围、知识库版本和隔离策略。当前项目已经冻结为 8 个业务场景，一期不再新增第 9 个场景；这里重点讲清楚既有场景如何维护，以及为什么维护 source、FAQ 和资料不需要改主链路代码。
+虽然本节的主题是数据隔离，但数据隔离和场景配置是紧密相关的。一个业务场景的完整配置决定了它的 source 白名单、数据范围、知识库版本和隔离策略。当前项目仅保留跨境贸易业务场景，通用场景注册、隔离和版本治理流程保持不变；这里重点讲清楚既有场景如何维护，以及为什么维护 source、FAQ 和资料不需要改主链路代码。
 
 ### 7.1 场景配置的层级结构
 
 ```mermaid
 flowchart TD
-    TOML["scenarios/enterprise_knowledge/scenario.toml<br/>场景身份 / source 白名单 / collection 名"]
-    FAQ["scenarios/enterprise_knowledge/faq.csv<br/>标准问答对"]
-    DataDir["scenarios/enterprise_knowledge/data/<br/>hr_data / it_data / finance_data"]
+    TOML["scenarios/cross_border_risk/scenario.toml<br/>场景身份 / source 白名单 / collection 名"]
+    FAQ["scenarios/cross_border_risk/faq.csv<br/>标准问答对"]
+    DataDir["scenarios/cross_border_risk/data/<br/>customs_data / classification_data / documents_data"]
 
     TOML --> SD["ScenarioDefinition<br/>(frozen dataclass)"]
     SD --> Registry["ScenarioRegistry<br/>扫描全部场景目录"]
@@ -16334,51 +16328,51 @@ flowchart TD
 
 ### 7.2 scenario.toml 完整字段说明
 
-以`enterprise_knowledge`场景为例：
+以`cross_border_risk`场景为例：
 
 ```text
-# scenarios/enterprise_knowledge/scenario.toml
+# scenarios/cross_border_risk/scenario.toml
 
 # === 必填：场景身份 ===
-scenario_id = "enterprise_knowledge"    # 唯一标识，用于 API 切换
-display_name = "企业内部知识助手"         # 页面标题、回答中显示的助手名
-industry = "通用企业"                   # 行业标签
+scenario_id = "cross_border_risk"    # 唯一标识，用于 API 切换
+display_name = "跨境贸易风险助手"         # 页面标题、回答中显示的助手名
+industry = "跨境贸易"                   # 行业标签
 assistant_name = "小知"                 # LLM System Prompt 中的角色名
-business_domain = "企业内部制度与流程"    # LLM System Prompt 中的业务域描述
-support_contact = "IT 服务台 分机 1234"  # 人工客服/信息不足时提供的联系方式
-description = "面向 HR、IT、财务等内部制度的知识问答"  # 场景说明
+business_domain = "跨境贸易规则、单证与合规流程"    # LLM System Prompt 中的业务域描述
+support_contact = "贸易系统服务台 分机 1234"  # 人工客服/信息不足时提供的联系方式
+description = "面向跨境贸易规则、单证和合规资料的知识问答"  # 场景说明
 
 # === 必填：数据源白名单 ===
-valid_sources = ["hr", "it", "finance"]
+valid_sources = ["customs", "classification", "documents"]
 # ↑ 这三个值会在 decide_route() 的入口阶段做白名单校验
 # ↑ 页面的 source 下拉框也基于这个列表生成
 
 # === 必填：Milvus 集合名 ===
-faq_collection = "enterprise_knowledge_faq"
-doc_collection = "enterprise_knowledge_doc"
+faq_collection = "cross_border_risk_faq"
+doc_collection = "cross_border_risk_doc"
 # ↑ 每个场景有独立的 FAQ 和文档集合，避免跨场景串库
 
 # === 选填：source 中文标签（页面下拉框展示用） ===
 [source_labels]
-hr = "HR 制度"
-it = "IT 支持"
-finance = "财务报销"
+customs = "海关与关务"
+classification = "归类与贸易规则"
+documents = "贸易单证与结算"
 
 # === 选填：source 推断正则（用于自动推断用户问题属于哪个 source） ===
 [source_patterns]
-hr = "(入职|离职|转正|调岗|考勤|请假|年假|加班|薪酬|绩效|社保)"
-it = "(VPN|密码|网络|打印机|电脑|邮箱|账号|wifi|系统|OA|审批流|服务器)"
-finance = "(报销|发票|预算|付款|采购|差旅|费用|借款|对公|对私)"
+customs = "(海关|报关|申报|税则|关务|监管|原产地)"
+classification = "(HS|归类|税则|商品编码|监管条件|许可证|原产地)"
+documents = "(合同|商业发票|装箱单|提单|付款|收款|结算|单证)"
 
 # === 选填：简历包装 ===
-resume_project_name = "企业内部知识库智能问答平台"
-resume_keywords = ["企业制度", "HR", "IT", "财务", "知识库"]
+resume_project_name = "跨境贸易知识问答平台"
+resume_keywords = ["企业制度", "关务", "贸易系统", "结算", "知识库"]
 
 # === 选填：页面快捷提问 ===
 sample_questions = [
-    "新人入职流程怎么走",
-    "VPN 连不上怎么处理",
-    "员工报销需要准备哪些材料",
+    "HS 编码归类流程怎么走",
+    "报关系统连接不上怎么处理",
+    "跨境贸易报关需要准备哪些材料",
 ]
 
 # === 选填：数据目录（默认值 = 场景目录下的 data/） ===
@@ -16388,57 +16382,53 @@ sample_questions = [
 
 ### 7.3 维护一个既有场景的完整步骤
 
-假设要维护`engineering_project_qa`场景，补充“图纸会审”资料。只需以下步骤：
+假设要维护`cross_border_risk`场景，补充“贸易单证会审”资料。只需以下步骤：
 
 **步骤 1**：创建场景目录和配置文件
 
 ```text
 scenarios/
-└── engineering_project_qa/
+└── cross_border_risk/
     ├── scenario.toml    ← 维护 source 白名单、关键词和页面示例问题
     ├── faq.csv          ← 补充或修正 FAQ 标准问答
     └── data/
-        ├── drawing_data/    ← 图纸资料
-        ├── quality_data/    ← 质量验收资料
-        └── safety_data/     ← 安全资料
+        ├── classification_data/    ← 归类与贸易规则资料
+        ├── customs_data/           ← 海关与关务资料
+        └── documents_data/         ← 贸易单证与结算资料
 ```
 
 **步骤 2**：维护 scenario.toml
 
 ```text
-scenario_id = "engineering_project_qa"
-display_name = "工程项目资料助手"
-industry = "工程项目管理"
-assistant_name = "工程资料助手"
-business_domain = "工程图纸、规范、质量、安全和验收资料"
+scenario_id = "cross_border_risk"
+display_name = "跨境贸易资料助手"
+industry = "跨境贸易管理"
+assistant_name = "跨境贸易资料助手"
+business_domain = "海关规范、归类依据、单证审核与物流合规资料"
 support_contact = "项目资料室"
-description = "面向工程项目资料、施工规范和验收要求的知识问答"
+description = "面向跨境贸易合同、海关规范、单证和合规要求的知识问答"
 
-valid_sources = ["drawing", "specification", "quality", "safety", "acceptance"]
-faq_collection = "engineering_project_qa_faq"
-doc_collection = "engineering_project_qa_doc"
+valid_sources = ["customs", "classification", "documents"]
+faq_collection = "cross_border_risk_faq"
+doc_collection = "cross_border_risk_doc"
 
 [source_labels]
-drawing = "图纸资料"
-specification = "标准规范"
-quality = "质量资料"
-safety = "安全资料"
-acceptance = "验收资料"
+customs = "海关与关务"
+classification = "归类与贸易规则"
+documents = "贸易单证与结算"
 
 [source_patterns]
-drawing = "(图纸|施工图|设计变更|图纸会审|深化图)"
-specification = "(规范|标准|强制性条文|条文|规程)"
-quality = "(质量|检验批|隐蔽工程|验收记录|实测实量)"
-safety = "(安全|交底|危大工程|专项方案|防护)"
-acceptance = "(验收|竣工|移交|资料归档|备案)"
+customs = "(海关|报关|申报|税则|关务|监管|原产地)"
+classification = "(HS|归类|税则|商品编码|监管条件|许可证|原产地)"
+documents = "(合同|商业发票|装箱单|提单|付款|收款|结算|单证)"
 
-resume_project_name = "工程项目资料与施工规范 RAG 问答助手"
-resume_keywords = ["工程资料", "标准规范", "图纸会审", "质量验收"]
+resume_project_name = "跨境贸易资料与规范 RAG 问答助手"
+resume_keywords = ["跨境贸易资料", "海关标准", "贸易单证会审", "单证审核"]
 
 sample_questions = [
-    "图纸会审记录和设计变更冲突时怎么办",
-    "隐蔽工程验收资料需要哪些附件",
-    "安全技术交底只有口头说明可以吗",
+    "贸易单证和合同变更冲突时怎么办",
+    "跨境贸易单证审核需要哪些附件",
+    "出口合规说明只有口头确认可以吗",
 ]
 ```
 
@@ -16446,18 +16436,18 @@ sample_questions = [
 
 ```text
 question,answer,source
-图纸会审记录和设计变更冲突时怎么办,应以审批后的设计变更或最新有效图纸为准，并保留会审记录、变更通知和审批记录，禁止直接按口头说明施工。,drawing
-隐蔽工程验收资料需要哪些附件,通常需要隐蔽验收记录、影像资料、检验批资料、材料合格证明和监理签认记录，具体以项目资料管理要求为准。,quality
+贸易单证和合同变更冲突时怎么办,应以审批后的合同与单证变更或最新有效贸易单证为准，并保留会审记录、变更通知和审批记录，禁止直接按口头说明申报。,classification
+跨境贸易单证审核需要哪些附件,通常需要单证审核记录、影像资料、批次申报资料、商品合规证明和关务复核记录，具体以项目资料管理要求为准。,documents
 ```
 
 **步骤 4**：准备知识库资料
 
-在`data/drawing_data/`、`data/quality_data/`、`data/safety_data/`等既有 source 目录下放入 Markdown、PDF、Word、Excel 等资料。
+在`data/classification_data/`、`data/customs_data/`、`data/documents_data/`等既有 source 目录下放入 Markdown、PDF、Word、Excel 等资料。
 
 **步骤 5**：执行入库
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 **步骤 6**：评测验证（可选但推荐）
@@ -16471,21 +16461,21 @@ python scripts/quality/check_evaluation_gate.py --report reports/evaluation/busi
 
 **步骤 7**：启动后验证
 
-重启服务，在页面选择「工程项目资料助手」后提问新增 FAQ 或资料相关问题。维护既有场景时仍然是**代码零修改，不需要改任何 Python 文件**。
+重启服务，在页面选择「跨境贸易资料助手」后提问新增 FAQ 或资料相关问题。维护既有场景时仍然是**代码零修改，不需要改任何 Python 文件**。
 
 ### 7.4 场景配置如何影响主链路
 
 ```mermaid
 flowchart LR
-    Q["用户问题<br/>二类医疗器械注册需要哪些材料"]
+    Q["用户问题<br/>受监管商品出口需要哪些材料"]
     SF["source_filter<br/>未显式选择"]
-    SID["scenario_id<br/>medical_compliance"]
+    SID["scenario_id<br/>cross_border_risk"]
     Registry["ScenarioRegistry.resolve()<br/>按 scenario_id 读取场景"]
-    Def["ScenarioDefinition<br/>valid_sources: drug / device / privacy<br/>faq_collection: medical_compliance_faq"]
-    Patterns["compiled_source_patterns()<br/>三组 source 正则：drug / device / privacy"]
-    Match["source 自动推断<br/>问题命中 device"]
-    Filter["检索过滤条件<br/>source_filter: device<br/>kb_version: active version<br/>tenant_id: default"]
-    Search["MilvusHybridStore.search_many()<br/>collection: medical_compliance_faq<br/>expr: source 与版本共同过滤"]
+    Def["ScenarioDefinition<br/>valid_sources: customs / classification / documents<br/>faq_collection: cross_border_risk_faq"]
+    Patterns["compiled_source_patterns()<br/>三组 source 正则：customs / classification / documents"]
+    Match["source 自动推断<br/>问题命中 documents"]
+    Filter["检索过滤条件<br/>source_filter: documents<br/>kb_version: active version<br/>tenant_id: default"]
+    Search["MilvusHybridStore.search_many()<br/>collection: cross_border_risk_faq<br/>expr: source 与版本共同过滤"]
 
     Q --> Registry
     SID --> Registry
@@ -16817,7 +16807,7 @@ and
 日常资料更新使用下面的命令：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这条命令会创建一个新的 STAGED 版本，并把当前 active 版本作为增量基准。代码入口在`scripts/rebuild_kb_version.py`，文档入库主逻辑在`qa_core/indexing/service.py`。
@@ -16889,10 +16879,10 @@ flowchart TD
 
 ```bash
 # 全量重建：适合初始化、schema 变化、模型变化后重建
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 
 # 引用式增量：适合日常资料新增、修改、删除
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 构建日志中会出现类似统计：
@@ -16917,25 +16907,25 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 
 | 文件 | v1 chunk | 有效期 |
 | --- | --- | --- |
-| `hr/onboarding.md` | `chunk_hr_v1` | `valid_from_seq=1, valid_to_seq=0` |
-| `it/vpn.md` | `chunk_vpn_v1` | `valid_from_seq=1, valid_to_seq=0` |
-| `finance/expense.md` | `chunk_expense_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `classification/classification.md` | `chunk_classification_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `documents/trade-system.md` | `chunk_documents_v1` | `valid_from_seq=1, valid_to_seq=0` |
+| `documents/settlement.md` | `chunk_settlement_v1` | `valid_from_seq=1, valid_to_seq=0` |
 
 现在基于 v1 构建 v2：
 
 | 文件 | v2 中的变化 | v2 的处理 |
 | --- | --- | --- |
-| `hr/onboarding.md` | 未变化 | v2 的 manifest 直接引用`chunk_hr_v1` |
-| `it/vpn.md` | 内容修改 | `chunk_vpn_v1.valid_to_seq=2`，再写入`chunk_vpn_v2` |
-| `finance/expense.md` | 删除 | `chunk_expense_v1.valid_to_seq=2` |
-| `legal/privacy.md` | 新增 | 写入`chunk_privacy_v2` |
+| `classification/classification.md` | 未变化 | v2 的 manifest 直接引用`chunk_classification_v1` |
+| `documents/trade-system.md` | 内容修改 | `chunk_documents_v1.valid_to_seq=2`，再写入`chunk_documents_v2` |
+| `documents/settlement.md` | 删除 | `chunk_settlement_v1.valid_to_seq=2` |
+| `documents/compliance.md` | 新增 | 写入`chunk_compliance_v2` |
 
 最终查询可见性是：
 
 | active 版本 | active\_seq | 可见内容 |
 | --- | --- | --- |
-| v1 | 1 | `hr/onboarding.md`、`it/vpn.md`、`finance/expense.md` |
-| v2 | 2 | `hr/onboarding.md`、`it/vpn.md`的新内容、`legal/privacy.md` |
+| v1 | 1 | `classification/classification.md`、`documents/trade-system.md`、`documents/settlement.md` |
+| v2 | 2 | `classification/classification.md`、`documents/trade-system.md`的新内容、`documents/compliance.md` |
 
 一句话理解：**v2 是一个完整的新版本视图，但它不要求所有文件都重新写向量；未变化文件只引用旧 chunk，变化或删除的旧 chunk 从 v2 开始失效。**
 
@@ -16968,7 +16958,7 @@ def generate_kb_version(prefix="kb", scenario_id=None) -> str:
     )[:8]  # 只取前 8 位
 
     return f"{prefix}_{scenario.scenario_id}_{stamp}_{config_hash}"
-    # 例：kb_enterprise_knowledge_20260506_103000_9f2a1b3c
+    # 例：kb_cross_border_risk_20260506_103000_9f2a1b3c
 ```
 
 ### 3.2 为什么版本号包含配置哈希
@@ -16976,8 +16966,8 @@ def generate_kb_version(prefix="kb", scenario_id=None) -> str:
 设计意图：从版本号可以直接判断两个版本是否使用同一套配置。
 
 ```text
-kb_enterprise_knowledge_20260506_103000_9f2a1b3c
-kb_enterprise_knowledge_20260507_150000_7d3e8f1a
+kb_cross_border_risk_20260506_103000_9f2a1b3c
+kb_cross_border_risk_20260507_150000_7d3e8f1a
                            不同日期 ↑         不同 hash ↑
 ```
 
@@ -17132,15 +17122,15 @@ def version_metadata(kb_version, scenario_id=None, *, version_seq=None):
 
 ```text
 chunk = Document(
-    page_content="入职流程包括以下步骤...",
+    page_content="HS 编码归类流程包括以下步骤...",
     metadata={
-        "source": "hr",
+        "source": "classification",
         "chunk_id": "abc123",
         "source_type": "doc",
         "record_type": "doc_chunk",
         "versioning_mode": "reference_incremental",
         "version_filter_mode": "validity_window",
-        "kb_version": "kb_enterprise_knowledge_20260507_150000_7d3e8f1a",
+        "kb_version": "kb_cross_border_risk_20260507_150000_7d3e8f1a",
         "valid_from_seq": 2,
         "valid_to_seq": 0,
         "embedding_model_version": "bge-m3-local-v1",
@@ -17167,13 +17157,13 @@ FAQ 和文档 chunk 都会携带`kb_version`、`valid_from_seq`、`valid_to_seq`
 
 ```text
 # FAQ 检索：按 active kb_version 精确过滤
-faq_expr = f'kb_version == "{active_version}" and source == "hr"'
+faq_expr = f'kb_version == "{active_version}" and source == "customs"'
 
 # 文档检索：按 active version_seq 解释引用式有效期视图
 doc_expr = (
     f'(valid_from_seq <= {active_seq} and '
     f'(valid_to_seq == 0 or valid_to_seq > {active_seq}))'
-    f' and source == "hr"'
+    f' and source == "customs"'
 )
 ```
 
@@ -17186,8 +17176,8 @@ doc_expr = (
 ```python
 # 评测脚本可以显式指定历史版本
 service.debug_retrieval(
-    query="入职流程有哪些步骤",
-    kb_version="kb_enterprise_knowledge_20260506_103000_9f2a1b3c",  # 旧版本
+    query="HS 编码归类流程有哪些步骤",
+    kb_version="kb_cross_border_risk_20260506_103000_9f2a1b3c",  # 旧版本
     ...
 )
 
@@ -17205,7 +17195,7 @@ for question in eval_set:
 这一部分是第 14 章需要和第 16、17 章衔接的地方：第 16 章负责把资料写入新版本，第 17 章负责解释质量报告如何检查；第 14 章负责解释为什么质量报告不通过时不能激活版本。
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 执行顺序：
@@ -17277,7 +17267,7 @@ if args.activate:
 传统软件测试通常是二元的（通过/失败）。但 RAG 系统的输出是**自然语言文本**，不能简单地用`assertEqual(expected, actual)`来判断。
 
 ```text
-问题："入职流程有哪些步骤"
+问题："HS 编码归类流程有哪些步骤"
 
 预期行为：
   ✅ 召回了正确的文档片段（检索质量）
@@ -17347,7 +17337,7 @@ flowchart TD
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --scenario enterprise_knowledge
+    --scenario cross_border_risk
 ```
 
 生成报告覆盖以下维度：
@@ -17397,7 +17387,7 @@ def _polarity(text: str) -> str:
 
 **为什么用 jieba.cut\_for\_search 而不是简单正则**：
 
-`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员密码重置"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
+`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员申报账号恢复"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
 
 真实冲突检测分两步，不使用一个虚构的“冲突相似度”：
 
@@ -17438,7 +17428,7 @@ unique_ratio = 去空白后不同字符数量 / 去空白后字符总数
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --report reports/ingestion/enterprise_knowledge_phase1_gate_check.json
+    --report reports/ingestion/cross_border_risk_phase1_gate_check.json
 ```
 
 这里要区分两个概念：
@@ -17477,24 +17467,24 @@ python scripts/quality/check_ingestion_quality_gate.py \
 // eval_sets/multi_scenario_smoke.json
 [
     {
-        "case_id": "enterprise_onboarding_doc",
-        "scenario_id": "enterprise_knowledge",
-        "source_filter": "hr",
-        "query": "入职流程有哪些步骤",
-        "expected_effective_source": "hr",
+        "case_id": "cross_border_classification_doc",
+        "scenario_id": "cross_border_risk",
+        "source_filter": "classification",
+        "query": "HS 编码归类流程有哪些步骤",
+        "expected_effective_source": "classification",
         "expected_hit_type": "rag",
-        "expected_source_contains": ["onboarding.md", "入职流程"],
-        "expected_keywords": ["入职", "流程", "步骤", "材料", "合同"]
+        "expected_source_contains": ["classification/classification.md", "HS 编码归类流程"],
+        "expected_keywords": ["报关", "流程", "步骤", "材料", "合同"]
     },
     {
-        "case_id": "enterprise_vpn_faq",
-        "scenario_id": "enterprise_knowledge",
-        "source_filter": "it",
-        "query": "忘记密码怎么办",
-        "expected_effective_source": "it",
+        "case_id": "cross_border_trade_system_faq",
+        "scenario_id": "cross_border_risk",
+        "source_filter": "documents",
+        "query": "申报账号异常怎么办",
+        "expected_effective_source": "documents",
         "expected_hit_type": "faq_direct",
-        "expected_source_contains": ["忘记密码", "密码重置"],
-        "expected_keywords": ["密码", "重置", "邮箱", "手机"]
+        "expected_source_contains": ["申报账号异常", "申报账号恢复"],
+        "expected_keywords": ["账号", "异常", "恢复", "申报"]
     }
 ]
 ```
@@ -17730,12 +17720,12 @@ python scripts/quality/check_evaluation_gate.py --report reports/evaluation/core
 
 ```text
 以测试样本为例：
-  查询："企业 VPN 连接失败要收集哪些信息？"
-  expected_source_contains：["it_support.md", "VPN 连接排查"]
+  查询："企业 报关系统连接失败要收集哪些信息？"
+  expected_source_contains：["documents/trade-system.md", "报关系统连接排查"]
 
 召回结果（服务返回的候选列表）：
   [1] "企业网络常见问题..."                 → 未命中
-  [2] "it_support.md / VPN 连接排查"        → 命中
+  [2] "documents/trade-system.md / 报关系统连接排查"        → 命中
 
 第一个匹配预期来源的排名是 2：
   source_recall_hit = True
@@ -17750,7 +17740,7 @@ def expected_source_rank(expected_source_contains, returned_sources):
     )
 
 rank = expected_source_rank(
-    ["it_support.md", "VPN 连接排查"],
+    ["documents/trade-system.md", "报关系统连接排查"],
     returned_sources,
 )
 source_recall_hit = rank is not None
@@ -17773,18 +17763,18 @@ Recall@K = 预期来源被召回的样本数 / 提供 expected_source_contains �
 ```text
 假设有 3 个测试查询：
 
-查询 1："入职流程有哪些步骤"
+查询 1："HS 编码归类流程有哪些步骤"
   召回结果：[doc_A(0.92), doc_B(0.85), doc_C(0.78), ...]
   第一个相关文档是 doc_A，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
 
-查询 2："VPN 连不上怎么办"
+查询 2："报关系统连接不上怎么办"
   召回结果：[doc_X(0.78), doc_Y(0.75), doc_Z(0.71), ...]
   前两个都不相关（虽然分数高，但内容不匹配）
   第一个相关文档是 doc_Z，排名第 3 位
   → Reciprocal Rank = 1/3 ≈ 0.333
 
-查询 3："员工报销需要准备哪些材料"
+查询 3："跨境贸易报关需要准备哪些材料"
   召回结果：[doc_M(0.95), doc_N(0.82), ...]
   第一个相关文档是 doc_M，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
@@ -17802,7 +17792,7 @@ def reciprocal_rank(expected_source_contains, returned_sources):
 
 # 找不到预期来源时，单条样本的 reciprocal rank 为 0。
 print(reciprocal_rank(
-    ["it_support.md", "VPN 连接排查"],
+    ["documents/trade-system.md", "报关系统连接排查"],
     returned_sources,
 ))
 ```
@@ -17864,26 +17854,26 @@ def keyword_coverage(answer, expected_keywords):
 
 ```json
 {
-    "case_id": "engineering_quality_hidden_acceptance",
-    "scenario_id": "engineering_project_qa",
-    "source_filter": "quality",
-    "query": "隐蔽工程验收需要哪些资料？",
+    "case_id": "cross_border_documents_review",
+    "scenario_id": "cross_border_risk",
+    "source_filter": "documents",
+    "query": "跨境贸易单证审核需要哪些资料？",
     "expected_hit_type": "rag",
-    "expected_effective_source": "quality",
+    "expected_effective_source": "documents",
     "expected_prompt_profile": "knowledge_answer",
     "expected_source_contains": [
-        "hidden_acceptance.md",
-        "隐蔽工程验收"
+        "documents/trade-document-review.md",
+        "单证审核记录"
     ],
     "expected_keywords": [
-        "隐蔽工程",
+        "单证审核",
         "验收",
-        "质量验收报告",
-        "隐蔽工程验收记录",
-        "材料检测报告",
-        "功能性试验报告"
+        "单证审核报告",
+        "单证审核记录",
+        "商品资料核验报告",
+        "系统申报测试报告"
     ],
-    "grading_notes": "答案需要覆盖验收记录、材料检测和功能性试验资料。"
+    "grading_notes": "答案需要覆盖单证审核记录、商品资料核验和系统申报测试资料。"
 }
 ```
 
@@ -17975,14 +17965,14 @@ flowchart TD
 
 #### 5.1.2 完整案例：FAQ 误直出怎么排查
 
-以`near_expense_tax_risk`这类样本为例，问题是“报销材料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
+以`near_settlement_tax_risk`这类样本为例，问题是“贸易结算资料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
 
 1. 先看`evaluate_intent_policy.py`。如果这条样本在意图层已经被分成`KNOWLEDGE_QUERY`或保守路线，说明入口判断基本没错。
 2. 再看`calibrate_thresholds.py`。如果当前 FAQ 直出候选的`false_direct_rate`偏高，说明阈值太松，不该让相似 FAQ 过早直出。
 3. 再看`evaluate_core_chain.py`。如果主链路里这条样本仍然变成`faq_direct`，而不是进入 RAG，那么问题就不是检索召回，而是 FAQ 直出保护线不够严。
 4. 处理动作不是先改`DOC_TOP_K`，而是先提高`FAQ_DIRECT_SCORE_THRESHOLD`或风险类 direct threshold，再重新跑评测和门禁。
 
-同样地，如果样本是“新员工入职第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
+同样地，如果样本是“出口资料提交第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
 
 ### 5.2 先区分通过案例与 Bad Case
 
@@ -17995,7 +17985,7 @@ Bad Case 不是一句“答案不对”，而是一条能复现、能标注、�
 用户提问：
 
 ```text
-VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 ```
 
 #### 先看截图中的通过案例
@@ -18004,9 +17994,9 @@ VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么
 
 | 用户问到的点 | 回答表现 |
 | --- | --- |
-| VPN 客户端版本 | 给出客户端版本核查、官方渠道确认和升级处理步骤 |
+| 报关系统客户端版本 | 给出客户端版本核查、官方渠道确认和升级处理步骤 |
 | 账号锁定 | 给出账号锁定判断、统一身份平台操作和重新登录步骤 |
-| 公网 IP | 单独说明公网 IP 获取与提交，便于 IT 继续排查 |
+| 公网 IP | 单独说明公网 IP 获取与提交，便于 贸易系统 继续排查 |
 
 同时，这个回答具备来源引用、可执行步骤和人工介入条件。因此它应该被视为**通过案例**，
 不属于 Bad Case。评测时可以把它作为完整回答样本，用于说明关键事实覆盖和引用可追溯性。
@@ -18016,14 +18006,14 @@ VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么
 下面这段是为了开发演示演示而故意简化的答案，**不是截图中的实际回答**：
 
 ```text
-可以先重启 VPN 客户端，确认网络正常；如果仍然无法连接，请提交 IT 工单。
+可以先重启报关系统客户端，确认网络正常；如果仍然无法连接，请提交贸易系统工单。
 ```
 
 这段回答看起来并非完全错误，但它没有分别回答三个排查项：
 
 | 用户问到的点 | 期望回答 | 当前回答是否覆盖 |
 | --- | --- | --- |
-| VPN 客户端版本 | 确认是否为 IT 发布的最新版，旧版本需重新安装 | 否 |
+| 报关系统客户端版本 | 确认是否为贸易系统发布的最新版，旧版本需重新安装 | 否 |
 | 账号锁定 | 检查账号是否过期、锁定或权限被回收 | 否 |
 | 公网 IP | 判断当前公网 IP 是否在允许范围或是否被安全策略拦截 | 否 |
 
@@ -18038,8 +18028,8 @@ VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么
 
 ```json
 {
-  "scenario_id": "enterprise_knowledge",
-  "kb_version": "kb_enterprise_knowledge_20260620_082630_4c1df17a",
+  "scenario_id": "cross_border_risk",
+  "kb_version": "kb_cross_border_risk_20260620_082630_4c1df17a",
   "intent": "KNOWLEDGE_QUERY",
   "question_category": "troubleshooting",
   "prompt_profile": "troubleshooting_steps",
@@ -18107,10 +18097,10 @@ flowchart LR
 ```bash
 python scripts/evaluate_core_chain.py --dataset eval_sets/multi_scenario_smoke.json --limit 20 --output reports/evaluation/core_chain_latest.json
 python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core_chain_latest.json --output eval_sets/local_bad_cases.json
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --output eval_sets/local_feedback_bad_cases.json
-python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/enterprise_it_troubleshooting_cases.json
-python scripts/evaluate_core_chain.py --dataset eval_sets/enterprise_it_troubleshooting_cases.json --output reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
-python scripts/quality/check_evaluation_gate.py --report reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --output eval_sets/local_feedback_bad_cases.json
+python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/cross_border_trade_cases.json
+python scripts/evaluate_core_chain.py --dataset eval_sets/cross_border_trade_cases.json --output reports/evaluation/cross_border_trade_cases_latest.json
+python scripts/quality/check_evaluation_gate.py --report reports/evaluation/cross_border_trade_cases_latest.json
 ```
 
 如果要把这条闭环直接挂到发布入口，可以运行`python scripts/verify_v1_release.py --include-evaluation --include-docker`。这条命令会一次性产出评测报告、门禁摘要和 Bad Case 候选，作为项目发布前的统一验收动作。
@@ -18148,7 +18138,7 @@ python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core
 用户点踩反馈的处理方式类似，但它不是评测真值，不能直接进入正式回归集。`export_feedback_bad_cases.py`只导出复核草稿：
 
 ```bash
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --rating not_useful --output eval_sets/local_feedback_bad_cases.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --rating not_useful --output eval_sets/local_feedback_bad_cases.json
 ```
 
 导出的样本会保留：
@@ -18165,29 +18155,29 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.6 人工复核怎么填
 
-脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以 VPN 示例为例，样本可以这样写：
+脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以报关系统示例为例，样本可以这样写：
 
 ```json
 {
-  "case_id": "bad_enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
-  "scenario_id": "enterprise_knowledge",
-  "source_filter": "it",
+  "case_id": "bad_cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
+  "scenario_id": "cross_border_risk",
+  "source_filter": "documents",
   "expected_hit_type": "rag",
-  "expected_effective_source": "it",
+  "expected_effective_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_source_contains": [
-    "it_support.md",
-    "VPN 连接排查"
+    "documents/trade-system.md",
+    "报关系统连接排查"
   ],
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
-  "grading_notes": "答案必须分别说明客户端版本、账号锁定、公网 IP 三个排查项，不能只给泛泛重启建议。"
+  "grading_notes": "答案必须分别说明客户端版本、申报账号锁定、出口 IP 三个排查项，不能只给泛泛重启建议。"
 }
 ```
 
@@ -18204,15 +18194,15 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.7 提升为评测样本
 
-复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/enterprise_it_troubleshooting_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
+复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/cross_border_trade_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
 
 建议按问题类型拆分文件，避免所有 Bad Case 混成一个大池子：
 
 | 文件 | 放什么样本 | 示例 |
 | --- | --- | --- |
 | `eval_sets/local_bad_cases.json` | 临时复核出的失败样本 | 最近一次评测失败项 |
-| `eval_sets/enterprise_it_troubleshooting_cases.json` | IT 排障类正式回归集 | VPN、账号锁定、工单、权限回收 |
-| `eval_sets/finance_reimbursement_cases.json` | 财务报销类正式回归集 | 发票、预算、审批、付款材料 |
+| `eval_sets/cross_border_trade_cases.json` | 贸易系统排障类正式回归集 | 报关系统、账号锁定、工单、权限回收 |
+| `eval_sets/cross_border_settlement_cases.json` | 贸易结算类正式回归集 | 发票、预算、审批、付款材料 |
 | `eval_sets/multi_turn_followup_cases.json` | 多轮追问正式回归集 | “那审批呢”“材料呢”“谁负责” |
 
 进入`eval_sets/`后，这条样本就不再只是一次线上记录，而是以后每次版本变更都要验证的质量资产。
@@ -18283,24 +18273,24 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ### 5.9 这条 Bad Case 如何影响 Gate
 
-把 VPN 示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
+把报关系统示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
+  "case_id": "cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
   "expected_hit_type": "rag",
-  "expected_effective_source": "it",
+  "expected_effective_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_source_contains": [
-    "it_support.md",
-    "VPN 连接排查"
+    "documents/trade-system.md",
+    "报关系统连接排查"
   ],
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
   "actual_hit_type": "rag",
@@ -18327,7 +18317,7 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
+  "case_id": "cross_border_trade_system_sub_questions_001",
   "actual_hit_type": "rag",
   "actual_source_hit": true,
   "actual_prompt_profile": "troubleshooting_steps",
@@ -18499,8 +18489,8 @@ python scripts/acceptance_smoke.py --base-url http://127.0.0.1:8000
 | --- | --- | --- |
 | 租户隔离 | A 公司能看到 B 公司的资料吗？ | `tenant_id="company_a"`不应查到`tenant_id="company_b"`的数据 |
 | 数据集隔离 | 生产环境和测试环境的数据混查？ | `dataset_id="production"`不应查到`dataset_id="test"`的数据 |
-| 可见性 | 实习生能看到高管会议纪要吗？ | `visibility="restricted"`的内容不应被普通员工检索到 |
-| 角色隔离 | HR 能看到财务数据吗？ | HR 角色不应查到`allowed_roles=["finance_admin"]`的数据 |
+| 可见性 | 实习生能看到高管会议纪要吗？ | `visibility="restricted"`的内容不应被普通申报主体检索到 |
+| 角色隔离 | 关务人员能看到结算数据吗？ | 关务角色不应查到`allowed_roles=["trade_settlement_admin"]`的数据 |
 
 ---
 
@@ -18553,7 +18543,7 @@ class DataScope:
 flowchart TD
     P["public<br/>公司公告 / 公开制度 / 产品手册"]
     I["internal<br/>部门流程文档 / 操作手册 / 内部培训资料"]
-    R["restricted<br/>高管会议纪要 / 薪酬方案 / 未公开合同条款"]
+    R["restricted<br/>高管会议纪要 / 结算方案 / 未公开合同条款"]
     A1["public 用户<br/>仅 public"]
     A2["internal 用户<br/>public + internal"]
     A3["restricted 用户<br/>全部三级"]
@@ -18580,7 +18570,7 @@ flowchart TD
 | --- | --- | --- |
 | `public` | 公司公告、公开制度、产品手册 | **所有人**（包括未登录用户） |
 | `internal` | 部门流程文档、操作手册、内部培训资料 | internal 用户 + restricted 用户（**包含**public 内容） |
-| `restricted` | 高管会议纪要、薪酬方案、未公开合同 | 仅 restricted 用户（**包含**public + internal 内容） |
+| `restricted` | 高管会议纪要、结算方案、未公开合同 | 仅 restricted 用户（**包含**public + internal 内容） |
 
 关键的包含关系：`public ⊂ internal ⊂ restricted`。箭头从外指向内（"包含于"），而不是从内指向外。这个设计意味着：
 
@@ -18605,7 +18595,7 @@ flowchart TD
     Dim1 --> Expr1["tenant_id 等于 company_a"]
     Dim2 --> Expr2["dataset_id 等于 production"]
     Dim3 --> Expr3["visibility 允许 public 和 internal"]
-    Dim4 --> Expr4["allowed_roles 包含 employee"]
+    Dim4 --> Expr4["allowed_roles 包含 trade_operator"]
 
     Expr1 --> Merge["AND 拼接"]
     Expr2 --> Merge
@@ -18627,12 +18617,12 @@ flowchart TD
 | 租户隔离 | `tenant_id` | 不同公司/部门的数据不能互查 | `"company_a"`,`"company_b"` |
 | 数据集隔离 | `dataset_id` | 同一租户下，生产数据和测试数据不能混 | `"production"`,`"staging"`,`"default"` |
 | 可见级别 | `visibility` | 同一数据集下，敏感资料仅限特定用户 | `"public"`,`"internal"`,`"restricted"` |
-| 角色控制 | `allowed_roles` | 同一可见级别下，特定角色才能访问 | `["legal", "hr", "admin"]` |
+| 角色控制 | `allowed_roles` | 同一可见级别下，特定角色才能访问 | `["customs_admin", "trade_operator", "admin"]` |
 
 四个维度从上到下逐步收紧：先限定租户（最粗粒度），再限定数据集，再限定可见级别，最后检查角色。最终拼成的 Milvus 表达式类似：
 
 ```text
-tenant_id == "company_a" && dataset_id == "production" && visibility in ["public", "internal"] && array_contains(allowed_roles, "employee")
+tenant_id == "company_a" && dataset_id == "production" && visibility in ["public", "internal"] && array_contains(allowed_roles, "trade_operator")
 ```
 
 **为什么不用一个大而全的字段（如 access\_level）把四个维度都编码进去？**因为运维场景中这四个维度的管理节奏完全不同：
@@ -18674,11 +18664,11 @@ def resolve_data_scope(
 # 文档入库时
 chunk_metadata = {
     "chunk_id": "abc123",
-    "source": "hr",
+    "source": "classification",
     "tenant_id": "company_a",         # 租户
     "dataset_id": "production_v2",    # 数据集
     "visibility": "internal",         # 可见级别
-    "allowed_roles": ["employee", "manager", "hr_admin"],  # 允许的角色
+    "allowed_roles": ["trade_operator", "customs_manager", "customs_admin"],  # 允许的角色
     "kb_version": "kb_...",
     ...
 }
@@ -18686,11 +18676,11 @@ chunk_metadata = {
 # FAQ 入库时
 faq_metadata = {
     "faq_id": "faq_001",
-    "source": "billing",
+    "source": "documents",
     "tenant_id": "company_a",
     "dataset_id": "production_v2",
     "visibility": "internal",
-    "allowed_roles": ["employee", "billing_admin"],
+    "allowed_roles": ["operator", "trade_settlement_admin"],
     "kb_version": "kb_...",
     ...
 }
@@ -18701,12 +18691,12 @@ faq_metadata = {
 ```text
 # ingest_directory() 接收完整的隔离参数
 ingest_directory(
-    directory_path="scenarios/enterprise_knowledge/data/hr_data",
-    source="hr",
+    directory_path="scenarios/cross_border_risk/data/classification_data",
+    source="classification",
     tenant_id="company_a",
     dataset_id="production_v2",
     visibility="internal",
-    allowed_roles=["employee", "manager", "hr_admin"],
+    allowed_roles=["trade_operator", "customs_manager", "customs_admin"],
     kb_version=current_version,
 )
 ```
@@ -18735,7 +18725,7 @@ if data_scope:
 
 # 最终表达式
 expr = " and ".join(clauses)
-# 结果：'source == "hr" and kb_version == "kb_xxx" and tenant_id == "company_a" and dataset_id == "production_v2" and visibility in ["public", "internal"] and array_contains(allowed_roles, "employee")'
+# 结果：'source == "classification" and kb_version == "kb_xxx" and tenant_id == "company_a" and dataset_id == "production_v2" and visibility in ["public", "internal"] and array_contains(allowed_roles, "trade_operator")'
 ```
 
 ### 4.2 在前端请求中传入隔离参数
@@ -18743,15 +18733,15 @@ expr = " and ".join(clauses)
 ```text
 // WebSocket 请求
 {
-    "query": "入职流程有哪些步骤",
+    "query": "HS 编码归类流程有哪些步骤",
     "session_id": "...",
-    "scenario_id": "enterprise_knowledge",
-    "source_filter": "hr",
+    "scenario_id": "cross_border_risk",
+    "source_filter": "classification",
     "tenant_id": "company_a",
     "dataset_id": "production_v2",
     "visibility": "internal",
-    "user_role": "employee",
-    "user_roles": ["employee", "manager"]
+    "user_role": "trade_operator",
+    "user_roles": ["trade_operator", "customs_manager"]
 }
 ```
 
@@ -18764,9 +18754,9 @@ expr = " and ".join(clauses)
 Milvus 的过滤表达式是一个类 SQL 的字符串。如果直接把用户输入拼入表达式，存在注入风险：
 
 ```text
-# 危险！如果用户输入 source_filter = 'hr" or 1==1 or "'
+# 危险！如果用户输入 source_filter = 'customs" or 1==1 or "'
 expr = f'source == "{source_filter}"'
-# 结果：source == "hr" or 1==1 or "" → 绕过了 source 过滤！
+# 结果：source == "customs" or 1==1 or "" → 绕过了 source 过滤！
 ```
 
 ### 5.2 escape\_expr\_value() 实现
@@ -18832,15 +18822,15 @@ def build_source_expr(source_filter, kb_version=None, data_scope=None):
 
 ## 第七部分：场景配置全貌 — 如何维护既有业务场景
 
-虽然本节的主题是数据隔离，但数据隔离和场景配置是紧密相关的。一个业务场景的完整配置决定了它的 source 白名单、数据范围、知识库版本和隔离策略。当前项目已经冻结为 8 个业务场景，一期不再新增第 9 个场景；这里重点讲清楚既有场景如何维护，以及为什么维护 source、FAQ 和资料不需要改主链路代码。
+虽然本节的主题是数据隔离，但数据隔离和场景配置是紧密相关的。一个业务场景的完整配置决定了它的 source 白名单、数据范围、知识库版本和隔离策略。当前项目仅保留跨境贸易业务场景，通用场景注册、隔离和版本治理流程保持不变；这里重点讲清楚既有场景如何维护，以及为什么维护 source、FAQ 和资料不需要改主链路代码。
 
 ### 7.1 场景配置的层级结构
 
 ```mermaid
 flowchart TD
-    TOML["scenarios/enterprise_knowledge/scenario.toml<br/>场景身份 / source 白名单 / collection 名"]
-    FAQ["scenarios/enterprise_knowledge/faq.csv<br/>标准问答对"]
-    DataDir["scenarios/enterprise_knowledge/data/<br/>hr_data / it_data / finance_data"]
+    TOML["scenarios/cross_border_risk/scenario.toml<br/>场景身份 / source 白名单 / collection 名"]
+    FAQ["scenarios/cross_border_risk/faq.csv<br/>标准问答对"]
+    DataDir["scenarios/cross_border_risk/data/<br/>customs_data / classification_data / documents_data"]
 
     TOML --> SD["ScenarioDefinition<br/>(frozen dataclass)"]
     SD --> Registry["ScenarioRegistry<br/>扫描全部场景目录"]
@@ -18860,51 +18850,51 @@ flowchart TD
 
 ### 7.2 scenario.toml 完整字段说明
 
-以`enterprise_knowledge`场景为例：
+以`cross_border_risk`场景为例：
 
 ```text
-# scenarios/enterprise_knowledge/scenario.toml
+# scenarios/cross_border_risk/scenario.toml
 
 # === 必填：场景身份 ===
-scenario_id = "enterprise_knowledge"    # 唯一标识，用于 API 切换
-display_name = "企业内部知识助手"         # 页面标题、回答中显示的助手名
-industry = "通用企业"                   # 行业标签
+scenario_id = "cross_border_risk"    # 唯一标识，用于 API 切换
+display_name = "跨境贸易风险助手"         # 页面标题、回答中显示的助手名
+industry = "跨境贸易"                   # 行业标签
 assistant_name = "小知"                 # LLM System Prompt 中的角色名
-business_domain = "企业内部制度与流程"    # LLM System Prompt 中的业务域描述
-support_contact = "IT 服务台 分机 1234"  # 人工客服/信息不足时提供的联系方式
-description = "面向 HR、IT、财务等内部制度的知识问答"  # 场景说明
+business_domain = "跨境贸易规则、单证与合规流程"    # LLM System Prompt 中的业务域描述
+support_contact = "贸易系统服务台 分机 1234"  # 人工客服/信息不足时提供的联系方式
+description = "面向跨境贸易规则、单证和合规资料的知识问答"  # 场景说明
 
 # === 必填：数据源白名单 ===
-valid_sources = ["hr", "it", "finance"]
+valid_sources = ["customs", "classification", "documents"]
 # ↑ 这三个值会在 decide_route() 的入口阶段做白名单校验
 # ↑ 页面的 source 下拉框也基于这个列表生成
 
 # === 必填：Milvus 集合名 ===
-faq_collection = "enterprise_knowledge_faq"
-doc_collection = "enterprise_knowledge_doc"
+faq_collection = "cross_border_risk_faq"
+doc_collection = "cross_border_risk_doc"
 # ↑ 每个场景有独立的 FAQ 和文档集合，避免跨场景串库
 
 # === 选填：source 中文标签（页面下拉框展示用） ===
 [source_labels]
-hr = "HR 制度"
-it = "IT 支持"
-finance = "财务报销"
+customs = "海关与关务"
+classification = "归类与贸易规则"
+documents = "贸易单证与结算"
 
 # === 选填：source 推断正则（用于自动推断用户问题属于哪个 source） ===
 [source_patterns]
-hr = "(入职|离职|转正|调岗|考勤|请假|年假|加班|薪酬|绩效|社保)"
-it = "(VPN|密码|网络|打印机|电脑|邮箱|账号|wifi|系统|OA|审批流|服务器)"
-finance = "(报销|发票|预算|付款|采购|差旅|费用|借款|对公|对私)"
+customs = "(海关|报关|申报|税则|关务|监管|原产地)"
+classification = "(HS|归类|税则|商品编码|监管条件|许可证|原产地)"
+documents = "(合同|商业发票|装箱单|提单|付款|收款|结算|单证)"
 
 # === 选填：简历包装 ===
-resume_project_name = "企业内部知识库智能问答平台"
-resume_keywords = ["企业制度", "HR", "IT", "财务", "知识库"]
+resume_project_name = "跨境贸易知识问答平台"
+resume_keywords = ["企业制度", "关务", "贸易系统", "结算", "知识库"]
 
 # === 选填：页面快捷提问 ===
 sample_questions = [
-    "新人入职流程怎么走",
-    "VPN 连不上怎么处理",
-    "员工报销需要准备哪些材料",
+    "HS 编码归类流程怎么走",
+    "报关系统连接不上怎么处理",
+    "跨境贸易报关需要准备哪些材料",
 ]
 
 # === 选填：数据目录（默认值 = 场景目录下的 data/） ===
@@ -18914,57 +18904,53 @@ sample_questions = [
 
 ### 7.3 维护一个既有场景的完整步骤
 
-假设要维护`engineering_project_qa`场景，补充“图纸会审”资料。只需以下步骤：
+假设要维护`cross_border_risk`场景，补充“贸易单证会审”资料。只需以下步骤：
 
 **步骤 1**：创建场景目录和配置文件
 
 ```text
 scenarios/
-└── engineering_project_qa/
+└── cross_border_risk/
     ├── scenario.toml    ← 维护 source 白名单、关键词和页面示例问题
     ├── faq.csv          ← 补充或修正 FAQ 标准问答
     └── data/
-        ├── drawing_data/    ← 图纸资料
-        ├── quality_data/    ← 质量验收资料
-        └── safety_data/     ← 安全资料
+        ├── classification_data/    ← 归类与贸易规则资料
+        ├── customs_data/           ← 海关与关务资料
+        └── documents_data/         ← 贸易单证与结算资料
 ```
 
 **步骤 2**：维护 scenario.toml
 
 ```text
-scenario_id = "engineering_project_qa"
-display_name = "工程项目资料助手"
-industry = "工程项目管理"
-assistant_name = "工程资料助手"
-business_domain = "工程图纸、规范、质量、安全和验收资料"
+scenario_id = "cross_border_risk"
+display_name = "跨境贸易资料助手"
+industry = "跨境贸易管理"
+assistant_name = "跨境贸易资料助手"
+business_domain = "海关规范、归类依据、单证审核与物流合规资料"
 support_contact = "项目资料室"
-description = "面向工程项目资料、施工规范和验收要求的知识问答"
+description = "面向跨境贸易合同、海关规范、单证和合规要求的知识问答"
 
-valid_sources = ["drawing", "specification", "quality", "safety", "acceptance"]
-faq_collection = "engineering_project_qa_faq"
-doc_collection = "engineering_project_qa_doc"
+valid_sources = ["customs", "classification", "documents"]
+faq_collection = "cross_border_risk_faq"
+doc_collection = "cross_border_risk_doc"
 
 [source_labels]
-drawing = "图纸资料"
-specification = "标准规范"
-quality = "质量资料"
-safety = "安全资料"
-acceptance = "验收资料"
+customs = "海关与关务"
+classification = "归类与贸易规则"
+documents = "贸易单证与结算"
 
 [source_patterns]
-drawing = "(图纸|施工图|设计变更|图纸会审|深化图)"
-specification = "(规范|标准|强制性条文|条文|规程)"
-quality = "(质量|检验批|隐蔽工程|验收记录|实测实量)"
-safety = "(安全|交底|危大工程|专项方案|防护)"
-acceptance = "(验收|竣工|移交|资料归档|备案)"
+customs = "(海关|报关|申报|税则|关务|监管|原产地)"
+classification = "(HS|归类|税则|商品编码|监管条件|许可证|原产地)"
+documents = "(合同|商业发票|装箱单|提单|付款|收款|结算|单证)"
 
-resume_project_name = "工程项目资料与施工规范 RAG 问答助手"
-resume_keywords = ["工程资料", "标准规范", "图纸会审", "质量验收"]
+resume_project_name = "跨境贸易资料与规范 RAG 问答助手"
+resume_keywords = ["跨境贸易资料", "海关标准", "贸易单证会审", "单证审核"]
 
 sample_questions = [
-    "图纸会审记录和设计变更冲突时怎么办",
-    "隐蔽工程验收资料需要哪些附件",
-    "安全技术交底只有口头说明可以吗",
+    "贸易单证和合同变更冲突时怎么办",
+    "跨境贸易单证审核需要哪些附件",
+    "出口合规说明只有口头确认可以吗",
 ]
 ```
 
@@ -18972,18 +18958,18 @@ sample_questions = [
 
 ```text
 question,answer,source
-图纸会审记录和设计变更冲突时怎么办,应以审批后的设计变更或最新有效图纸为准，并保留会审记录、变更通知和审批记录，禁止直接按口头说明施工。,drawing
-隐蔽工程验收资料需要哪些附件,通常需要隐蔽验收记录、影像资料、检验批资料、材料合格证明和监理签认记录，具体以项目资料管理要求为准。,quality
+贸易单证和合同变更冲突时怎么办,应以审批后的合同与单证变更或最新有效贸易单证为准，并保留会审记录、变更通知和审批记录，禁止直接按口头说明申报。,classification
+跨境贸易单证审核需要哪些附件,通常需要单证审核记录、影像资料、批次申报资料、商品合规证明和关务复核记录，具体以项目资料管理要求为准。,documents
 ```
 
 **步骤 4**：准备知识库资料
 
-在`data/drawing_data/`、`data/quality_data/`、`data/safety_data/`等既有 source 目录下放入 Markdown、PDF、Word、Excel 等资料。
+在`data/classification_data/`、`data/customs_data/`、`data/documents_data/`等既有 source 目录下放入 Markdown、PDF、Word、Excel 等资料。
 
 **步骤 5**：执行入库
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 **步骤 6**：评测验证（可选但推荐）
@@ -18997,21 +18983,21 @@ python scripts/quality/check_evaluation_gate.py --report reports/evaluation/busi
 
 **步骤 7**：启动后验证
 
-重启服务，在页面选择「工程项目资料助手」后提问新增 FAQ 或资料相关问题。维护既有场景时仍然是**代码零修改，不需要改任何 Python 文件**。
+重启服务，在页面选择「跨境贸易资料助手」后提问新增 FAQ 或资料相关问题。维护既有场景时仍然是**代码零修改，不需要改任何 Python 文件**。
 
 ### 7.4 场景配置如何影响主链路
 
 ```mermaid
 flowchart LR
-    Q["用户问题<br/>二类医疗器械注册需要哪些材料"]
+    Q["用户问题<br/>受监管商品出口需要哪些材料"]
     SF["source_filter<br/>未显式选择"]
-    SID["scenario_id<br/>medical_compliance"]
+    SID["scenario_id<br/>cross_border_risk"]
     Registry["ScenarioRegistry.resolve()<br/>按 scenario_id 读取场景"]
-    Def["ScenarioDefinition<br/>valid_sources: drug / device / privacy<br/>faq_collection: medical_compliance_faq"]
-    Patterns["compiled_source_patterns()<br/>三组 source 正则：drug / device / privacy"]
-    Match["source 自动推断<br/>问题命中 device"]
-    Filter["检索过滤条件<br/>source_filter: device<br/>kb_version: active version<br/>tenant_id: default"]
-    Search["MilvusHybridStore.search_many()<br/>collection: medical_compliance_faq<br/>expr: source 与版本共同过滤"]
+    Def["ScenarioDefinition<br/>valid_sources: customs / classification / documents<br/>faq_collection: cross_border_risk_faq"]
+    Patterns["compiled_source_patterns()<br/>三组 source 正则：customs / classification / documents"]
+    Match["source 自动推断<br/>问题命中 documents"]
+    Filter["检索过滤条件<br/>source_filter: documents<br/>kb_version: active version<br/>tenant_id: default"]
+    Search["MilvusHybridStore.search_many()<br/>collection: cross_border_risk_faq<br/>expr: source 与版本共同过滤"]
 
     Q --> Registry
     SID --> Registry
@@ -19127,7 +19113,7 @@ source_filter
 
 | 入口 | 用途 | 适合场景 |
 | --- | --- | --- |
-| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 8 个冻结场景 | 新环境初始化、统一准备、Milvus schema 变更后全量修复 |
+| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 当前跨境贸易场景 | 新环境初始化、统一准备、Milvus schema 变更后的全量修复 |
 | `scripts/rebuild_kb_version.py` | 只重建单个业务场景 | 只修改了某个场景资料、验证单场景入库、定位某个场景问题 |
 
 如果在 Docker Compose 里执行入库命令，先确认项目根目录存在`.env.compose`。仓库只提交`.env.compose.example`，首次部署需要生成本地配置文件：
@@ -19143,7 +19129,7 @@ notepad .env.compose
 python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-它会对 8 个冻结场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
+它会对 当前跨境贸易场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
 
 在 Docker Compose 模式下，对应命令是：
 
@@ -19153,7 +19139,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，批量重建全部 8 个场景时不加`--reset-collections`：
+如果之前已经存在知识库，只是资料内容变化，批量重建当前跨境贸易场景时不加`--reset-collections`：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -19162,19 +19148,19 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_scena
 如果只重建一个场景，使用`scripts/rebuild_kb_version.py`：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 Docker Compose 模式下，对应命令是：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 企业中更常见的日常资料更新方式，是“构建阶段增量，查询阶段按有效版本视图读取”。如果当前 active 版本已经存在，且只是少量文件变化，可以创建新候选版本并基于 active 做跨版本增量构建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这条命令的语义是：FAQ 仍按新版本重建；文档先读取 active 版本的 MySQL IndexManifest，未变化文件直接引用旧版本 chunk，不复制 Milvus 行；变化文件让旧 chunk 从目标版本开始失效，再重新加载、切分、embedding；删除文件只写失效版本。在线查询按 active`version_seq`解释有效期视图。
@@ -19220,7 +19206,7 @@ and (valid_to_seq == 0 or valid_to_seq > active_seq)
 假设 active 版本序号是`8`，文档检索表达式为：
 
 ```text
-scenario_id == "enterprise_knowledge"
+scenario_id == "cross_border_risk"
 and valid_from_seq <= 8
 and (valid_to_seq == 0 or valid_to_seq > 8)
 ```
@@ -19236,12 +19222,12 @@ and (valid_to_seq == 0 or valid_to_seq > 8)
 
 这里的“旧 chunk”只来自本次增量基准版本的同路径 manifest，不是全历史版本扫描。也就是说，某个文件在 v2 中修改时，只让 v1 里被 v2 继承的那批 chunk 从 v2 开始不可见；更早或其他历史版本仍按自己的`active_seq`查询，不会被物理删除，也不会失去回滚价值。
 
-下面用一个具体例子看引用式增量怎么工作。假设企业知识库里有三份资料：
+下面用一个具体例子看引用式增量怎么工作。假设跨境贸易知识库里有三份资料：
 
 ```text
-hr_onboarding.md      入职流程
-it_vpn.md             VPN 处理
-finance_expense.md    报销流程
+classification/classification.md      HS 编码归类流程
+documents/trade-system.md             报关系统处理
+documents/settlement.md    跨境结算流程
 ```
 
 ### 版本 v1：首次全量入库
@@ -19250,9 +19236,9 @@ finance_expense.md    报销流程
 
 | chunk\_id | 文件 | 内容摘要 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 入职需要提交身份证、银行卡、合同信息 | 1 | 0 |
-| `it_c1` | `it_vpn.md` | VPN 连不上先检查账号、网络和 MFA | 1 | 0 |
-| `fin_c1` | `finance_expense.md` | 报销流程包括提交单据、审批、财务复核 | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 商品归类需要提交商品资料、原产地信息和贸易合同 | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 报关系统连不上先检查账号、网络和 MFA | 1 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 跨境结算流程包括提交单据、审批、结算复核 | 1 | 0 |
 
 此时 active 版本序号是`1`，查询表达式是：
 
@@ -19264,26 +19250,26 @@ and (valid_to_seq == 0 or valid_to_seq > 1)
 能查到：
 
 ```text
-hr_c1, it_c1, fin_c1
+classification_c1, documents_c1, settlement_c1
 ```
 
-### 版本 v2：只修改 VPN 文档
+### 版本 v2：只修改报关系统文档
 
-后来 IT 更新了 VPN 文档，新增了“客户端版本检查”的要求。引用式增量不会复制 HR 和财务 chunk，只处理变化文件：
+后来贸易系统更新了报关系统文档，新增了“贸易系统版本检查”的要求。引用式增量不会复制归类和结算 chunk，只处理变化文件：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `it_c1` | `it_vpn.md` | 1 | 2 | v2 开始不再使用旧 VPN 口径 |
-| 插入新 chunk | `it_c2` | `it_vpn.md` | 2 | 0 | 新 VPN 口径从 v2 开始有效 |
+| 标记旧 chunk 失效 | `documents_c1` | `documents/trade-system.md` | 1 | 2 | v2 开始不再使用旧报关系统口径 |
+| 插入新 chunk | `documents_c2` | `documents/trade-system.md` | 2 | 0 | 新报关系统口径从 v2 开始有效 |
 
 Milvus 中现在一共有四条 chunk：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 |
-| `it_c1` | `it_vpn.md` | 1 | 2 |
-| `it_c2` | `it_vpn.md` | 2 | 0 |
-| `fin_c1` | `finance_expense.md` | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 0 |
 
 如果 active 版本序号切到`2`，查询表达式是：
 
@@ -19295,56 +19281,56 @@ and (valid_to_seq == 0 or valid_to_seq > 2)
 能查到：
 
 ```text
-hr_c1, it_c2, fin_c1
+classification_c1, documents_c2, settlement_c1
 ```
 
-注意：`hr_c1`和`fin_c1`没有复制一份到 v2，但它们仍然有效，因为`valid_to_seq = 0`。
+注意：`classification_c1`和`settlement_c1`没有复制一份到 v2，但它们仍然有效，因为`valid_to_seq = 0`。
 
-### 版本 v3：删除财务报销文档，新增差旅文档
+### 版本 v3：删除旧贸易结算文档，新增跨境结算规则文档
 
-再后来财务删除旧的报销流程文档，并新增差旅规则文档：
+再后来结算删除旧的跨境结算流程文档，并新增跨境结算规则文档：
 
 ```text
-删除：finance_expense.md
-新增：finance_travel.md
+删除：documents/settlement.md
+新增：documents/settlement_rules.md
 ```
 
 引用式增量处理如下：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `fin_c1` | `finance_expense.md` | 1 | 3 | v3 起旧报销资料不再可见 |
-| 插入新 chunk | `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 差旅规则从 v3 起生效 |
+| 标记旧 chunk 失效 | `settlement_c1` | `documents/settlement.md` | 1 | 3 | v3 起旧贸易结算资料不再可见 |
+| 插入新 chunk | `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 跨境结算规则从 v3 起生效 |
 
 如果 active 版本序号切到`3`，有效 chunk 是：
 
 ```text
-hr_c1, it_c2, fin_travel_c1
+classification_c1, documents_c2, settlement_rules_c1
 ```
 
 完整状态表如下：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | v1 可见 | v2 可见 | v3 可见 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 | 是 | 是 | 是 |
-| `it_c1` | `it_vpn.md` | 1 | 2 | 是 | 否 | 否 |
-| `it_c2` | `it_vpn.md` | 2 | 0 | 否 | 是 | 是 |
-| `fin_c1` | `finance_expense.md` | 1 | 3 | 是 | 是 | 否 |
-| `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 否 | 否 | 是 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 | 是 | 是 | 是 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 | 是 | 否 | 否 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 | 否 | 是 | 是 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 3 | 是 | 是 | 否 |
+| `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 否 | 否 | 是 |
 
 这个例子说明了引用式增量的关键点：
 
-1. 未变化资料不复制，例如`hr_c1`从 v1 一直被 v2、v3 复用。
+1. 未变化资料不复制，例如`classification_c1`从 v1 一直被 v2、v3 复用。
 2. 修改资料不是覆盖旧 chunk，而是让旧 chunk 在新版本前失效，再插入新 chunk。
 3. 删除资料不是立刻物理删除，而是写`valid_to_seq`，让它从某个版本开始不可见。
-4. 回滚时只需要把 active 版本序号从`3`切回`2`，`fin_c1`又会重新可见。
+4. 回滚时只需要把 active 版本序号从`3`切回`2`，`settlement_c1`又会重新可见。
 
 这种方案节省空间，也更适合大规模知识库。本项目已经把它作为版本治理能力实现：MySQL 版本表提供`version_seq`，文档 chunk 写入`valid_from_seq / valid_to_seq`，检索时用 active 版本序号解释有效版本视图。
 
 如果 Milvus Collection 的 schema 发生过变化，例如 sparse 字段从普通 SparseVector 改成 BM25 Function 输出字段，需要加上`--reset-collections`删除旧集合并重新建表：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 这里要区分两个参数：`--force`只是忽略文件指纹、强制把资料重新写入新版本；`--reset-collections`会删除 Milvus 里的 FAQ/Doc collection，让当前代码重新创建 schema。已有知识库只更新资料时，用`--force`，不要默认加`--reset-collections`。
@@ -19445,7 +19431,7 @@ document_parser_backend: str = Field(default="native", validation_alias="DOCUMEN
 
 | 值 | 含义 | 适用场景 |
 | --- | --- | --- |
-| `native` | 默认解析路径 | 8 个业务场景的常规资料、稳定验收、快速部署 |
+| `native` | 默认解析路径 | 跨境贸易业务场景的常规资料、稳定验收、快速部署 |
 | `docling` | 对 PDF/DOCX/PPTX/HTML 启用 Docling 增强解析 | 复杂版面 PDF、图文混排、表格版式复杂的资料 |
 
 注意：**CSV/Excel 不会交给 Docling**。本项目对业务表格采用行级 Document 设计，每一行都会保留`sheet_name`、`row_number`、表头和单元格键值。通用版面解析器可能把表格转成普通 Markdown 文本，反而削弱“按行定位、按行引用、按行回答”的业务能力。
@@ -19603,7 +19589,7 @@ class DoclingLoader:
 pip install -r requirements.txt
 $env:DOCUMENT_PARSER_BACKEND="docling"
 python scripts/tools/docling_parser_smoke.py
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 Docker Compose 环境：
@@ -19615,7 +19601,7 @@ docker compose --env-file .env.compose build api
 # 在 .env.compose 中设置
 # DOCUMENT_PARSER_BACKEND=docling
 
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 如果只是确认 Docling 是否能在当前环境解析文件，可以先运行：
@@ -19630,7 +19616,7 @@ python scripts/tools/docling_parser_smoke.py
 python scripts/tools/docling_parser_smoke.py --input 你的复杂版面资料.pdf
 ```
 
-如果只是使用 8 个默认业务场景和当前已整理好的多格式资料，保持：
+如果只是使用 当前跨境贸易业务场景和当前已整理好的多格式资料，保持：
 
 ```text
 DOCUMENT_PARSER_BACKEND=native
@@ -19661,7 +19647,7 @@ DOCUMENT_PARSER_BACKEND=native
 
 LlamaIndex 的`SimpleDirectoryReader`可以快速读取本地目录文件，`IngestionPipeline`可以把 transformations、embedding、缓存和向量库写入串起来。这些能力适合快速搭建 RAG 数据接入原型，也适合作为企业项目后续优化方向。
 
-但本项目没有把 LlamaIndex 接入第 15 章主代码，原因是本章要讲清楚的是企业知识库入库治理，而不只是“把文件变成向量”。
+但本项目没有把 LlamaIndex 接入第 15 章主代码，原因是本章要讲清楚的是跨境贸易知识库入库治理，而不只是“把文件变成向量”。
 
 | 对比点 | 本项目当前实现 | 如果直接换成 LlamaIndex |
 | --- | --- | --- |
@@ -19968,15 +19954,15 @@ for doc in documents:
 但 CSV / Excel 表格不是自然段，而是一条条**行记录**。一行里多个单元格共同表达一个完整业务事实：
 
 ```text
-材料名称=施工照片
+材料名称=报关资料截图
 状态=待补交
-责任人=项目经理
+责任人=关务负责人
 截止日期=2026-05-30
 ```
 
 如果把表格当普通文本递归切分，可能出现：
 
-- 检索命中了“施工照片”，但状态被切到另一个 chunk；
+- 检索命中了“报关资料截图”，但状态被切到另一个 chunk；
 - 检索命中了“金额”，但付款节点、责任人丢失；
 - 两行不同记录被拼到同一个 chunk，答案把 A 行状态说成 B 行状态；
 - 答案引用只能定位到文件，不能定位到工作表和行号。
@@ -20060,14 +20046,14 @@ content = "\n".join(
 生成后的正文类似：
 
 ```text
-表格文件：验收清单.xlsx
-工作表：材料验收
+表格文件：单证审核清单.xlsx
+工作表：材料审核
 表头：材料名称 / 状态 / 责任人 / 截止日期
 行号：3
 单元格：
-- 材料名称：施工照片
+- 材料名称：报关资料截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-30
 ```
 
@@ -20141,7 +20127,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 
 ```text
 用户问：验收材料清单里测试报告那一行是什么状态？
-相似 FAQ：验收需要提交哪些材料？
+相似 FAQ：单证审核需要提交哪些材料？
 
 这两个问题都包含“验收”“材料”“测试报告”，相似度可能不低。
 但 FAQ 回答的是材料范围，用户问的是某一行字段值。
@@ -20153,7 +20139,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 表格资料的答案必须能回到原始证据。当前项目在来源标签中追加工作表和行号：
 
 ```text
-[1] 验收清单.xlsx / 工作表：材料验收 / 第 3 行
+[1] 单证审核清单.xlsx / 工作表：材料审核 / 第 3 行
 ```
 
 另外，表格类问题经常涉及状态、金额、责任人、日期等精确值。LLM 有时会概括回答而漏掉某个关键单元格，所以项目里增加了表格行兜底：
@@ -20166,7 +20152,7 @@ def enforce_table_row_details(answer: str, context_docs: list[Document]) -> str:
 如果模型回答没有覆盖表格行里的核心字段，系统会追加：
 
 ```text
-表格行要点：状态：待补交；责任人：项目经理 [1]
+表格行要点：状态：待补交；责任人：关务负责人 [1]
 ```
 
 这不是替代 LLM，而是对表格精确字段的一层确定性保护。
@@ -20185,9 +20171,9 @@ Excel 和 CSV 入库可以概括为：
 
 ```text
 材料名称,状态,责任人,截止日期,备注
-施工图纸,已提交,设计负责人,2026-05-10,版本为 V3
-隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片
-验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021
+报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3
+单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片
+申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021
 ```
 
 下面这段代码用于在本地快速验证表格 loader 和切分策略。它不连接 Milvus，也不会改动线上知识库，只检查三件事：
@@ -20204,15 +20190,15 @@ from qa_core.indexing.table_documents import load_table_file
 from qa_core.intent.question_category import is_table_query
 
 
-csv_path = Path("reports/table_practice/acceptance_material_checklist.csv")
+csv_path = Path("reports/table_practice/customs_document_checklist.csv")
 csv_path.parent.mkdir(parents=True, exist_ok=True)
 csv_path.write_text(
     "\n".join(
         [
             "材料名称,状态,责任人,截止日期,备注",
-            "施工图纸,已提交,设计负责人,2026-05-10,版本为 V3",
-            "隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片",
-            "验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021",
+            "报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3",
+            "单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片",
+            "申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021",
         ]
     ),
     encoding="utf-8-sig",
@@ -20233,7 +20219,7 @@ print(chunks[1].page_content)
 print("第二条 chunk metadata：")
 print(chunks[1].metadata)
 
-query = "验收清单里隐蔽工程照片是什么状态，责任人是谁？"
+query = "单证审核清单里单证审核截图是什么状态，责任人是谁？"
 print("是否表格类问题：", is_table_query(query))
 ```
 
@@ -20248,14 +20234,14 @@ print("是否表格类问题：", is_table_query(query))
 第二条 chunk 的正文应该仍然保留完整行记录，类似：
 
 ```text
-表格文件：acceptance_material_checklist.csv
+表格文件：customs_document_checklist.csv
 工作表：csv
 表头：材料名称 / 状态 / 责任人 / 截止日期 / 备注
 行号：2
 单元格：
-- 材料名称：隐蔽工程照片
+- 材料名称：单证审核截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-18
 - 备注：缺少二层西侧照片
 ```
@@ -20275,19 +20261,19 @@ metadata 中至少要看到这些字段：
 如果要把这个 CSV 真正放进知识库，可以把文件移动到某个场景的数据目录，例如：
 
 ```text
-scenarios/engineering_project_qa/data/quality_data/acceptance_material_checklist.csv
+scenarios/cross_border_risk/data/customs_data/customs_document_checklist.csv
 ```
 
 然后执行单场景重建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-version --force --quality-gate --activate --description "table row ingestion practice"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "table row ingestion practice"
 ```
 
 入库后可以用检索诊断或页面提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 期望链路是：
@@ -20302,7 +20288,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 如果模型漏掉状态或责任人，后处理追加表格行要点
 ```
 
-建议把它放到工程项目资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
+建议把它放到跨境贸易资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
 
 | 检查点 | 期望结果 | 为什么检查 |
 | --- | --- | --- |
@@ -20314,13 +20300,13 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 可以在页面或接口中提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 理想回答应该包含：
 
 - 状态是“待补交”；
-- 责任人是“项目经理”；
+- 责任人是“关务负责人”；
 - 引用来源能定位到 CSV/Excel 的对应行；
 - 如果模型遗漏状态或责任人，系统会追加“表格行要点”。
 
@@ -20355,7 +20341,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 
 | 概念 | 保存位置 | 作用 |
 | --- | --- | --- |
-| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_enterprise_knowledge_20260618_xxx`。 |
+| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_cross_border_risk_20260618_xxx`。 |
 | Manifest 记录 | MySQL`kb_document_manifests` | 记录某个文件在某个`kb_version`下生成了哪些 chunk，用于判断下次是否可以跳过、复用或重建。 |
 | Milvus chunk | Milvus collection | 保存真正用于检索的文本、向量和 metadata。 |
 
@@ -20477,7 +20463,7 @@ if (
 这是更常见的企业发布方式：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这时目标版本是新的，例如：
@@ -20540,24 +20526,24 @@ _record_manifest(context, path, fingerprint, base_record.chunk_ids, settings)
 
 | 文件 | `kb_v1`Manifest | 状态 |
 | --- | --- | --- |
-| `hr/onboarding.md` | chunk`[hr_1, hr_2]` | 未变化 |
-| `finance/expense.md` | chunk`[fin_1, fin_2]` | 内容修改 |
-| `finance/budget_preapproval_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
+| `classification/classification.md` | chunk`[classification_1, classification_2]` | 未变化 |
+| `documents/settlement.md` | chunk`[settlement_1, settlement_2]` | 内容修改 |
+| `documents/settlement_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
 
 现在执行：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 系统创建新版本`kb_v2`，处理结果如下：
 
 | 文件 | 处理方式 | `kb_v2`结果 |
 | --- | --- | --- |
-| `hr/onboarding.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到入职资料，且不重新 embedding、不复制向量。 |
-| `finance/expense.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的报销资料内容。 |
-| `finance/budget_preapproval_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
-| 新增`it/vpn.md` | 重新加载、切分、embedding | `kb_v2`新增 VPN 资料。 |
+| `classification/classification.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到商品归类资料，且不重新 embedding、不复制向量。 |
+| `documents/settlement.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的贸易结算资料内容。 |
+| `documents/settlement_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
+| 新增`documents/trade-system.md` | 重新加载、切分、embedding | `kb_v2`新增报关系统资料。 |
 
 最终线上激活后，文档检索按 active 版本序号解释有效期视图：
 
@@ -20667,10 +20653,10 @@ FAQ 使用 CSV 文件管理，每行一个问答对：
 
 ```text
 source,question,answer
-hr,入职需要准备哪些材料,入职当天需要携带：身份证原件及复印件、学历证书复印件、离职证明、体检报告、银行卡信息...
-hr,试用期转正流程是什么,试用期转正流程：1. 员工提交转正申请 2. 直属领导评估 3. HR 审核 4. 部门负责人审批...
-it,VPN 连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换 VPN 节点...
-billing,如何申请发票,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
+customs,报关需要准备哪些材料,申报前需要携带：商业发票与装箱单、原产地证复印件、贸易合同、报关委托书、收款账户信息...
+customs,跨境贸易单证审核流程是什么,单证审核与放行流程：1. 申报主体提交放行申请 2. 关务负责人复核 3. 关务审核 4. 关务负责人确认...
+documents,报关系统连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换报关系统节点...
+documents,跨境结算发票如何申请,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
 ```
 
 ### 6.2 入库实现
@@ -20766,10 +20752,10 @@ FAQ metadata 里也会出现`valid_from_seq/valid_to_seq`，这是因为版本�
 
 ```bash
 # 预览将要清理的内容（默认 dry-run）
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk
 
 # 实际执行清理
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge --no-dry-run
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk --no-dry-run
 ```
 
 ### 7.2 cleanup\_missing\_document\_chunks 原理
@@ -20831,7 +20817,7 @@ def cleanup_missing_document_chunks(
 
 ### 8.1 这属于多模态吗
 
-导入文档中同时存在文字、图片、截图、扫描页、流程图、设备照片时，本质上已经进入了**多模态资料处理**范围。
+导入文档中同时存在文字、图片、截图、扫描页、流程图、货物照片时，本质上已经进入了**多模态资料处理**范围。
 
 但在当前一期项目里，它应该被定位为：
 
@@ -20853,7 +20839,7 @@ def cleanup_missing_document_chunks(
 
 - 合同扫描件；
 - 审批截图；
-- 设备告警截图；
+- 报关系统告警截图；
 - 流程图；
 - 验收照片；
 - 表格截图；
@@ -20889,7 +20875,7 @@ def cleanup_missing_document_chunks(
 如果后续引入 VLM 和图文块，再升级为：
 
 ```text
-图片/流程图/设备照片
+图片/流程图/货物照片
   -> OCR 或 VLM 生成候选说明
   -> 绑定附近正文、页码、图片编号
   -> 人工复核
@@ -20911,7 +20897,7 @@ def cleanup_missing_document_chunks(
 
 ```bash
 python scripts/ocr/run_offline_ocr.py --input-dir incoming_scans --output-dir reports/ocr/batch_001
-python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario engineering_project_qa --source quality --apply
+python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario cross_border_risk --source documents --apply
 ```
 
 第一条命令只生成待复核资料，第二条命令才把复核后的 Markdown 提升到场景资料目录。提升后仍然要执行知识库版本重建、入库质量检查和 RAG 回归验收。
@@ -20976,9 +20962,7 @@ qa_core/indexing/image_risk.py
 
 ```text
 scenarios/                         当前正式知识库数据源
-  enterprise_knowledge/
-  equipment_ops/
-  ...
+  cross_border_risk/
 
 data_packs/enterprise_realistic_pack/   企业仿真增强资料包
   clean_overlay/                        可治理、可预检的增强候选资料
@@ -21005,7 +20989,7 @@ data_packs 是企业增强资料和脏数据治理隔离区。
 
 ```text
 第一层：scenarios
-  当前正式知识库，保证 8 个业务场景可稳定初始化、稳定验证。
+  当前正式知识库，保证跨境贸易场景可稳定初始化、稳定验证。
 
 第二层：clean_overlay
   企业增强候选资料，先预检、再计划激活、再回归评测。
@@ -21016,7 +21000,7 @@ data_packs 是企业增强资料和脏数据治理隔离区。
 
 ### 9.1 scenarios 是主链路数据源
 
-`scenarios/`是当前 8 个冻结业务场景的正式资料目录。执行下面命令时，默认读取的就是`scenarios/`：
+`scenarios/`是当前 1 个跨境贸易业务场景的正式资料目录。执行下面命令时，默认读取的就是`scenarios/`：
 
 ```bash
 python scripts/rebuild_scenarios.py --reset-collections
@@ -21025,16 +21009,16 @@ python scripts/rebuild_scenarios.py --reset-collections
 单场景重建也是一样：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
-所以首轮跑通主链路时只需要关心`scenarios/`，它保证主链路足够稳定、可控、可复现。8 个冻结业务场景都已经包含 Markdown、CSV、XLSX、DOCX、PPTX 和带中文文本层的 PDF 样例，用来验证多格式 loader、表格行入库和普通文档切分不是只停留在代码接口上。
+所以首轮跑通主链路时只需要关心`scenarios/`，它保证主链路足够稳定、可控、可复现。1 个跨境贸易业务场景都已经包含 Markdown、CSV、XLSX、DOCX、PPTX 和带中文文本层的 PDF 样例，用来验证多格式 loader、表格行入库和普通文档切分不是只停留在代码接口上。
 
 `scenarios/`的意义是：
 
 | 目标 | 说明 |
 | --- | --- |
-| 保证主链路可跑通 | 新环境初始化 8 个场景时，不依赖额外资料包。 |
+| 保证主链路可跑通 | 新环境初始化跨境贸易场景时，不依赖额外资料包。 |
 | 保证排查边界清晰 | 如果检索为空、版本未激活、loader 失败，可以先排查代码和环境，不被复杂资料干扰。 |
 | 保证测试稳定 | 测试、回归、项目文档示例都基于一组冻结资料，结果更容易复现。 |
 | 保证入库质量可控 | 资料格式覆盖足够多，但不会故意混入冲突、过期、噪声样本。 |
@@ -21048,8 +21032,8 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 - 审批链和补签流程；
 - 合同付款风险；
 - 跨境单证金额变更；
-- 理赔材料不一致；
-- SaaS 企业客户账单和集成问题。
+- 货损单证不一致；
+- 跨境贸易系统账单和接口问题。
 
 它不是 active 知识库的一部分，也不会被`rebuild_scenarios.py`自动读取。这样设计是为了避免“增强资料还没治理完，就污染正式知识库”。
 
@@ -21080,6 +21064,8 @@ clean_overlay
 
 常用命令：
 
+当前注册表仅包含`cross_border_risk`，因此下面的`--all-scenarios`只会构建跨境贸易数据；保留该参数是为了沿用通用脚本接口。
+
 ```bash
 python scripts/enterprise_overlay/build_enterprise_overlay_dataset.py --all-scenarios --output reports/verification/enterprise_overlay_build_latest.json
 python scripts/enterprise_overlay/check_enterprise_overlay_readiness.py --output reports/verification/enterprise_overlay_readiness_latest.json
@@ -21092,11 +21078,11 @@ python scripts/enterprise_overlay/run_enterprise_overlay_activation.py --plan re
 一个具体例子：
 
 ```text
-scenarios/enterprise_knowledge/
-  已有通用入职、报销、IT 支持资料。
+scenarios/cross_border_risk/
+  已有通用报关、贸易结算、贸易系统支持资料。
 
-data_packs/.../clean_overlay/enterprise_knowledge/
-  增加区域入职差异、付款阈值、特殊审批规则。
+data_packs/.../clean_overlay/cross_border_risk/
+  增加区域报关差异、付款阈值、特殊审批规则。
 ```
 
 如果在主链路初始资料中直接混入这些复杂规则，RAG 链路验证和资料治理问题会被混在一起；把它们放在企业增强阶段，可以把流程拆清楚：
@@ -21143,7 +21129,7 @@ python scripts/enterprise_overlay/analyze_dirty_enterprise_samples.py --output r
 
 | 看起来像什么 | 实际风险 |
 | --- | --- |
-| 一份扫描报销材料 | OCR 可能把金额、日期、票据号识别错。 |
+| 一份扫描贸易结算材料 | OCR 可能把金额、日期、票据号识别错。 |
 | 一份旧制度 | 可能和当前制度冲突，导致回答旧口径。 |
 | 一份表格导出 | 列名缺失、字段错位，检索到也无法可靠回答。 |
 | 一条 FAQ | 标准答案可能和正文资料相反。 |
@@ -21175,7 +21161,7 @@ python scripts/enterprise_overlay/analyze_dirty_enterprise_samples.py --output r
 
 | 目录 | 是否默认入库 | 作用 |
 | --- | --- | --- |
-| `scenarios/` | 是 | 当前正式知识库资料，8 场景初始化读取这里 |
+| `scenarios/` | 是 | 当前跨境贸易正式知识库资料，初始化时读取这里 |
 | `data_packs/.../clean_overlay/` | 否 | 企业仿真增强候选资料，预检通过后才能按计划激活 |
 | `data_packs/.../dirty_samples/` | 否 | 资料治理风险样本，只用于风险识别和清洗流程 |
 
@@ -21247,7 +21233,7 @@ BM25 Function / sparse 字段不兼容
 通常表示复用了旧 schema collection。处理方式是删除旧 collection 并重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 排查口径：
@@ -21268,7 +21254,7 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
   -> 最后再考虑调整阈值
 ```
 
-不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低质量资料只能停留在 STAGED，不会进入 active 知识库。
+不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低审核资料只能停留在 STAGED，不会进入 active 知识库。
 
 ### 10.5 重建后页面还是旧答案
 
@@ -21285,9 +21271,9 @@ docker logs -f knowforge-api
 
 1. 是否有多个 Milvus 实例：宿主机脚本连的是`127.0.0.1:19530`，容器内脚本连的是`http://milvus:19530`。要确认两者指向同一个 Docker Compose 服务。
 
-### 10.6 八场景全量初始化的推荐命令
+### 10.6 跨境贸易场景全量初始化的推荐命令
 
-如果需要在新环境中一次性把全部 8 个场景初始化到可运行状态，使用：
+如果需要在新环境中一次性把当前跨境贸易场景初始化到可运行状态，使用：
 
 ```powershell
 if (!(Test-Path .env.compose)) { Copy-Item .env.compose.example .env.compose }
@@ -21297,7 +21283,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，重建全部 8 个场景时不要删除 collection：
+如果之前已经存在知识库，只是资料内容变化，重建当前跨境贸易场景时不要删除 collection：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -21400,14 +21386,14 @@ class IntentClassifierTests(unittest.TestCase):
     """验证规则候选路径的意图输出，不需要远程 LLM。"""
 
     def test_business_knowledge_question_uses_knowledge_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("新人入职流程怎么走", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("HS 编码归类流程怎么走", [], scenario)
         self.assertEqual(result.intent, "KNOWLEDGE_QUERY")
-        self.assertEqual(result.suggested_source, "hr")
+        self.assertEqual(result.suggested_source, "classification")
 
     def test_short_direct_faq_shape_prefers_faq_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("员工报销需要准备哪些材料？", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("跨境贸易报关需要准备哪些材料？", [], scenario)
         self.assertEqual(result.intent, "FAQ_QUERY")
         self.assertEqual(result.reason, "source_question_shape_rule")
         # 规则命中 → 不调用 LLM → reason 是确定性字符串
@@ -21415,41 +21401,38 @@ class IntentClassifierTests(unittest.TestCase):
 
 **关键模式**：这些纯逻辑测试验证的是**规则候选路径**，不经过远程 LLM，也不替代 BERT 模型评测。测试空历史（`[]`）触发规则判定，可以单独验证规则层；模型加载、评测和网关仲裁由第 05 章的专门测试覆盖。
 
-### 2.3 source 推断测试（跨场景）
+### 2.3 跨境贸易 source 推断测试
 
 ```python
 class ScenarioRegistryTests(unittest.TestCase):
 
-    def test_enterprise_source_patterns_are_used_for_source_inference(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        self.assertEqual(infer_source("新人入职流程怎么走", scenario), "hr")
-        self.assertEqual(infer_source("VPN 连不上怎么处理", scenario), "it")
+    def test_cross_border_source_patterns_are_used_for_source_inference(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("HS 编码归类流程怎么走", scenario), "classification")
+        self.assertEqual(infer_source("报关系统连接不上怎么处理", scenario), "documents")
 
     def test_cross_border_source_patterns_are_used(self):
         scenario = get_scenario_registry().resolve("cross_border_risk")
-        self.assertEqual(infer_source("交易对手命中制裁名单怎么办", scenario), "sanction")
-        self.assertEqual(infer_source("信用证不符点如何处理", scenario), "payment")
+        self.assertEqual(infer_source("贸易规则命中限制名单怎么办", scenario), "customs")
+        self.assertEqual(infer_source("跨境结算单证不符点如何处理", scenario), "documents")
 
-    def test_engineering_project_patterns_are_used(self):
-        scenario = get_scenario_registry().resolve("engineering_project_qa")
-        self.assertEqual(infer_source("图纸变更后旧版本还能作为施工依据吗", scenario), "drawing")
-        self.assertEqual(infer_source("隐蔽工程验收需要哪些资料", scenario), "quality")
+    def test_trade_document_patterns_are_used(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("贸易单证变更后旧版本还能作为申报依据吗", scenario), "classification")
+        self.assertEqual(infer_source("跨境贸易单证审核需要哪些资料", scenario), "documents")
 ```
 
 **关键模式**：使用`resolve(scenario_id)`加载真实场景 TOML 配置，验证 source\_patterns 的匹配逻辑。这是对"配置即代码"的测试。
 
-### 2.4 场景边界检测测试
+### 2.4 场景内 source 边界测试
 
 ```python
-def test_scenario_boundary_detects_question_from_other_business_scene(self):
-    scenario = get_scenario_registry().resolve("enterprise_knowledge")
-    # 问一个工程安全问题，但当前场景是企业知识
-    decision = detect_scenario_boundary(
-        "安全技术交底只有口头说明可以吗？", scenario
+def test_cross_border_compliance_question_routes_to_customs(self):
+    scenario = get_scenario_registry().resolve("cross_border_risk")
+    source = infer_source(
+        "出口合规说明只有口头确认可以吗？", scenario
     )
-    self.assertTrue(decision.crossed)
-    self.assertEqual(decision.matched_scenario_id, "engineering_project_qa")
-    self.assertEqual(decision.matched_source, "safety")
+    self.assertEqual(source, "customs")
 ```
 
 ### 2.5 检索过滤测试（纯逻辑）
@@ -21466,18 +21449,18 @@ class RetrievalFilterTests(unittest.TestCase):
             visibility="internal", user_role="admin"
         )
         expr = build_source_expr(
-            "billing",
+            "documents",
             kb_version="kb_v1",
             data_scope=scope,
         )
-        self.assertIn('source == "billing"', expr)
+        self.assertIn('source == "documents"', expr)
         self.assertIn('kb_version == "kb_v1"', expr)
         self.assertIn('tenant_id == "tenant_a"', expr)
         self.assertIn('array_contains(allowed_roles, "admin")', expr)
 
     def test_validate_source_filter_rejects_invalid_source(self):
         with self.assertRaises(ValueError):
-            validate_source_filter("unknown", valid_sources=["billing"])
+            validate_source_filter("unknown", valid_sources=["documents"])
 ```
 
 **关键模式**：表达式构造测试只验证字符串拼接；非法 source 的测试放在入口校验函数上。两类职责分开，读代码时不会把边界校验和底层表达式构造混在一起。
@@ -21526,9 +21509,9 @@ class PromptProfileTests(unittest.TestCase):
     def test_business_compliance_questions_use_compliance_guard(self):
         """合规类问题使用 compliance_guard, 不按普通知识问答处理。"""
         queries = [
-            "受限空间作业前需要哪些安全确认？",
-            "检验批资料和现场实物不一致怎么办？",
-            "安全技术交底只有口头说明可以吗？",
+            "出口货物放行前需要哪些合规确认？",
+            "批次申报资料和现场实物不一致怎么办？",
+            "出口合规说明只有口头确认可以吗？",
         ]
         for query in queries:
             with self.subTest(query=query):
@@ -21627,14 +21610,14 @@ def test_evaluation_gate_rejects_scenario_group_regression(self):
     report = {
         "recall_at_k": 1.0,  # 全局正常
         "rows": [
-            {"scenario_id": "enterprise_knowledge", "recall_hit": True},
-            {"scenario_id": "insurance_claims", "recall_hit": False},  # 这个场景退化
+            {"scenario_id": "cross_border_risk", "recall_hit": True},
+            {"scenario_id": "cross_border_risk", "recall_hit": False},  # 这个场景退化
         ],
     }
     result = evaluate_eval_gate(report, EvaluationGateThresholds())
     self.assertFalse(result["ok"])
     # 失败指标中包含按场景分组的退化信息
-    self.assertIn("scenario.insurance_claims.recall_at_k",
+    self.assertIn("scenario.cross_border_risk.recall_at_k",
                   {item["metric"] for item in result["failures"]})
 ```
 
@@ -21789,7 +21772,7 @@ python -m pytest tests/test_mysql_metadata_stores.py -q
 
 | 入口 | 用途 | 适合场景 |
 | --- | --- | --- |
-| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 8 个冻结场景 | 新环境初始化、统一准备、Milvus schema 变更后全量修复 |
+| `scripts/rebuild_scenarios.py` | 一次初始化/重建全部 当前跨境贸易场景 | 新环境初始化、统一准备、Milvus schema 变更后的全量修复 |
 | `scripts/rebuild_kb_version.py` | 只重建单个业务场景 | 只修改了某个场景资料、验证单场景入库、定位某个场景问题 |
 
 如果在 Docker Compose 里执行入库命令，先确认项目根目录存在`.env.compose`。仓库只提交`.env.compose.example`，首次部署需要生成本地配置文件：
@@ -21805,7 +21788,7 @@ notepad .env.compose
 python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-它会对 8 个冻结场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
+它会对 当前跨境贸易场景逐个执行“新建版本 → 强制入库 → 质量门禁 → 激活”，并在`--reset-collections`开启时删除旧 FAQ/Doc collection，确保 Milvus schema 按当前代码重新创建。
 
 在 Docker Compose 模式下，对应命令是：
 
@@ -21815,7 +21798,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，批量重建全部 8 个场景时不加`--reset-collections`：
+如果之前已经存在知识库，只是资料内容变化，批量重建当前跨境贸易场景时不加`--reset-collections`：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -21824,19 +21807,19 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_scena
 如果只重建一个场景，使用`scripts/rebuild_kb_version.py`：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 Docker Compose 模式下，对应命令是：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 企业中更常见的日常资料更新方式，是“构建阶段增量，查询阶段按有效版本视图读取”。如果当前 active 版本已经存在，且只是少量文件变化，可以创建新候选版本并基于 active 做跨版本增量构建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这条命令的语义是：FAQ 仍按新版本重建；文档先读取 active 版本的 MySQL IndexManifest，未变化文件直接引用旧版本 chunk，不复制 Milvus 行；变化文件让旧 chunk 从目标版本开始失效，再重新加载、切分、embedding；删除文件只写失效版本。在线查询按 active`version_seq`解释有效期视图。
@@ -21882,7 +21865,7 @@ and (valid_to_seq == 0 or valid_to_seq > active_seq)
 假设 active 版本序号是`8`，文档检索表达式为：
 
 ```text
-scenario_id == "enterprise_knowledge"
+scenario_id == "cross_border_risk"
 and valid_from_seq <= 8
 and (valid_to_seq == 0 or valid_to_seq > 8)
 ```
@@ -21898,12 +21881,12 @@ and (valid_to_seq == 0 or valid_to_seq > 8)
 
 这里的“旧 chunk”只来自本次增量基准版本的同路径 manifest，不是全历史版本扫描。也就是说，某个文件在 v2 中修改时，只让 v1 里被 v2 继承的那批 chunk 从 v2 开始不可见；更早或其他历史版本仍按自己的`active_seq`查询，不会被物理删除，也不会失去回滚价值。
 
-下面用一个具体例子看引用式增量怎么工作。假设企业知识库里有三份资料：
+下面用一个具体例子看引用式增量怎么工作。假设跨境贸易知识库里有三份资料：
 
 ```text
-hr_onboarding.md      入职流程
-it_vpn.md             VPN 处理
-finance_expense.md    报销流程
+classification/classification.md      HS 编码归类流程
+documents/trade-system.md             报关系统处理
+documents/settlement.md    跨境结算流程
 ```
 
 ### 版本 v1：首次全量入库
@@ -21912,9 +21895,9 @@ finance_expense.md    报销流程
 
 | chunk\_id | 文件 | 内容摘要 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 入职需要提交身份证、银行卡、合同信息 | 1 | 0 |
-| `it_c1` | `it_vpn.md` | VPN 连不上先检查账号、网络和 MFA | 1 | 0 |
-| `fin_c1` | `finance_expense.md` | 报销流程包括提交单据、审批、财务复核 | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 商品归类需要提交商品资料、原产地信息和贸易合同 | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 报关系统连不上先检查账号、网络和 MFA | 1 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 跨境结算流程包括提交单据、审批、结算复核 | 1 | 0 |
 
 此时 active 版本序号是`1`，查询表达式是：
 
@@ -21926,26 +21909,26 @@ and (valid_to_seq == 0 or valid_to_seq > 1)
 能查到：
 
 ```text
-hr_c1, it_c1, fin_c1
+classification_c1, documents_c1, settlement_c1
 ```
 
-### 版本 v2：只修改 VPN 文档
+### 版本 v2：只修改报关系统文档
 
-后来 IT 更新了 VPN 文档，新增了“客户端版本检查”的要求。引用式增量不会复制 HR 和财务 chunk，只处理变化文件：
+后来贸易系统更新了报关系统文档，新增了“贸易系统版本检查”的要求。引用式增量不会复制归类和结算 chunk，只处理变化文件：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `it_c1` | `it_vpn.md` | 1 | 2 | v2 开始不再使用旧 VPN 口径 |
-| 插入新 chunk | `it_c2` | `it_vpn.md` | 2 | 0 | 新 VPN 口径从 v2 开始有效 |
+| 标记旧 chunk 失效 | `documents_c1` | `documents/trade-system.md` | 1 | 2 | v2 开始不再使用旧报关系统口径 |
+| 插入新 chunk | `documents_c2` | `documents/trade-system.md` | 2 | 0 | 新报关系统口径从 v2 开始有效 |
 
 Milvus 中现在一共有四条 chunk：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq |
 | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 |
-| `it_c1` | `it_vpn.md` | 1 | 2 |
-| `it_c2` | `it_vpn.md` | 2 | 0 |
-| `fin_c1` | `finance_expense.md` | 1 | 0 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 0 |
 
 如果 active 版本序号切到`2`，查询表达式是：
 
@@ -21957,56 +21940,56 @@ and (valid_to_seq == 0 or valid_to_seq > 2)
 能查到：
 
 ```text
-hr_c1, it_c2, fin_c1
+classification_c1, documents_c2, settlement_c1
 ```
 
-注意：`hr_c1`和`fin_c1`没有复制一份到 v2，但它们仍然有效，因为`valid_to_seq = 0`。
+注意：`classification_c1`和`settlement_c1`没有复制一份到 v2，但它们仍然有效，因为`valid_to_seq = 0`。
 
-### 版本 v3：删除财务报销文档，新增差旅文档
+### 版本 v3：删除旧贸易结算文档，新增跨境结算规则文档
 
-再后来财务删除旧的报销流程文档，并新增差旅规则文档：
+再后来结算删除旧的跨境结算流程文档，并新增跨境结算规则文档：
 
 ```text
-删除：finance_expense.md
-新增：finance_travel.md
+删除：documents/settlement.md
+新增：documents/settlement_rules.md
 ```
 
 引用式增量处理如下：
 
 | 操作 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| 标记旧 chunk 失效 | `fin_c1` | `finance_expense.md` | 1 | 3 | v3 起旧报销资料不再可见 |
-| 插入新 chunk | `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 差旅规则从 v3 起生效 |
+| 标记旧 chunk 失效 | `settlement_c1` | `documents/settlement.md` | 1 | 3 | v3 起旧贸易结算资料不再可见 |
+| 插入新 chunk | `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 跨境结算规则从 v3 起生效 |
 
 如果 active 版本序号切到`3`，有效 chunk 是：
 
 ```text
-hr_c1, it_c2, fin_travel_c1
+classification_c1, documents_c2, settlement_rules_c1
 ```
 
 完整状态表如下：
 
 | chunk\_id | 文件 | valid\_from\_seq | valid\_to\_seq | v1 可见 | v2 可见 | v3 可见 |
 | --- | --- | --- | --- | --- | --- | --- |
-| `hr_c1` | `hr_onboarding.md` | 1 | 0 | 是 | 是 | 是 |
-| `it_c1` | `it_vpn.md` | 1 | 2 | 是 | 否 | 否 |
-| `it_c2` | `it_vpn.md` | 2 | 0 | 否 | 是 | 是 |
-| `fin_c1` | `finance_expense.md` | 1 | 3 | 是 | 是 | 否 |
-| `fin_travel_c1` | `finance_travel.md` | 3 | 0 | 否 | 否 | 是 |
+| `classification_c1` | `classification/classification.md` | 1 | 0 | 是 | 是 | 是 |
+| `documents_c1` | `documents/trade-system.md` | 1 | 2 | 是 | 否 | 否 |
+| `documents_c2` | `documents/trade-system.md` | 2 | 0 | 否 | 是 | 是 |
+| `settlement_c1` | `documents/settlement.md` | 1 | 3 | 是 | 是 | 否 |
+| `settlement_rules_c1` | `documents/settlement_rules.md` | 3 | 0 | 否 | 否 | 是 |
 
 这个例子说明了引用式增量的关键点：
 
-1. 未变化资料不复制，例如`hr_c1`从 v1 一直被 v2、v3 复用。
+1. 未变化资料不复制，例如`classification_c1`从 v1 一直被 v2、v3 复用。
 2. 修改资料不是覆盖旧 chunk，而是让旧 chunk 在新版本前失效，再插入新 chunk。
 3. 删除资料不是立刻物理删除，而是写`valid_to_seq`，让它从某个版本开始不可见。
-4. 回滚时只需要把 active 版本序号从`3`切回`2`，`fin_c1`又会重新可见。
+4. 回滚时只需要把 active 版本序号从`3`切回`2`，`settlement_c1`又会重新可见。
 
 这种方案节省空间，也更适合大规模知识库。本项目已经把它作为 V1 版本治理能力实现：MySQL 版本表提供`version_seq`，文档 chunk 写入`valid_from_seq / valid_to_seq`，检索时用 active 版本序号解释有效版本视图。
 
 如果 Milvus Collection 的 schema 发生过变化，例如 sparse 字段从普通 SparseVector 改成 BM25 Function 输出字段，需要加上`--reset-collections`删除旧集合并重新建表：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 这里要区分两个参数：`--force`只是忽略文件指纹、强制把资料重新写入新版本；`--reset-collections`会删除 Milvus 里的 FAQ/Doc collection，让当前代码重新创建 schema。已有知识库只更新资料时，用`--force`，不要默认加`--reset-collections`。
@@ -22107,7 +22090,7 @@ document_parser_backend: str = Field(default="native", validation_alias="DOCUMEN
 
 | 值 | 含义 | 适用场景 |
 | --- | --- | --- |
-| `native` | 默认解析路径 | 8 个业务场景的常规资料、稳定验收、快速部署 |
+| `native` | 默认解析路径 | 跨境贸易业务场景的常规资料、稳定验收、快速部署 |
 | `docling` | 对 PDF/DOCX/PPTX/HTML 启用 Docling 增强解析 | 复杂版面 PDF、图文混排、表格版式复杂的资料 |
 
 注意：**CSV/Excel 不会交给 Docling**。本项目对业务表格采用行级 Document 设计，每一行都会保留`sheet_name`、`row_number`、表头和单元格键值。通用版面解析器可能把表格转成普通 Markdown 文本，反而削弱“按行定位、按行引用、按行回答”的业务能力。
@@ -22265,7 +22248,7 @@ class DoclingLoader:
 pip install -r requirements.txt
 $env:DOCUMENT_PARSER_BACKEND="docling"
 python scripts/tools/docling_parser_smoke.py
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 Docker Compose 环境：
@@ -22277,7 +22260,7 @@ docker compose --env-file .env.compose build api
 # 在 .env.compose 中设置
 # DOCUMENT_PARSER_BACKEND=docling
 
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate --description "docling parser rebuild"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "docling parser rebuild"
 ```
 
 如果只是确认 Docling 是否能在当前环境解析文件，可以先运行：
@@ -22292,7 +22275,7 @@ python scripts/tools/docling_parser_smoke.py
 python scripts/tools/docling_parser_smoke.py --input 你的复杂版面资料.pdf
 ```
 
-如果只是使用 8 个默认业务场景和当前已整理好的多格式资料，保持：
+如果只是使用 当前跨境贸易业务场景和当前已整理好的多格式资料，保持：
 
 ```text
 DOCUMENT_PARSER_BACKEND=native
@@ -22323,7 +22306,7 @@ DOCUMENT_PARSER_BACKEND=native
 
 LlamaIndex 的`SimpleDirectoryReader`可以快速读取本地目录文件，`IngestionPipeline`可以把 transformations、embedding、缓存和向量库写入串起来。这些能力适合快速搭建 RAG 数据接入原型，也适合作为企业项目后续优化方向。
 
-但本项目没有把 LlamaIndex 接入第 16 章主代码，原因是本章要讲清楚的是企业知识库入库治理，而不只是“把文件变成向量”。
+但本项目没有把 LlamaIndex 接入第 16 章主代码，原因是本章要讲清楚的是跨境贸易知识库入库治理，而不只是“把文件变成向量”。
 
 | 对比点 | 本项目当前实现 | 如果直接换成 LlamaIndex |
 | --- | --- | --- |
@@ -22630,15 +22613,15 @@ for doc in documents:
 但 CSV / Excel 表格不是自然段，而是一条条**行记录**。一行里多个单元格共同表达一个完整业务事实：
 
 ```text
-材料名称=施工照片
+材料名称=报关资料截图
 状态=待补交
-责任人=项目经理
+责任人=关务负责人
 截止日期=2026-05-30
 ```
 
 如果把表格当普通文本递归切分，可能出现：
 
-- 检索命中了“施工照片”，但状态被切到另一个 chunk；
+- 检索命中了“报关资料截图”，但状态被切到另一个 chunk；
 - 检索命中了“金额”，但付款节点、责任人丢失；
 - 两行不同记录被拼到同一个 chunk，答案把 A 行状态说成 B 行状态；
 - 答案引用只能定位到文件，不能定位到工作表和行号。
@@ -22722,14 +22705,14 @@ content = "\n".join(
 生成后的正文类似：
 
 ```text
-表格文件：验收清单.xlsx
-工作表：材料验收
+表格文件：单证审核清单.xlsx
+工作表：材料审核
 表头：材料名称 / 状态 / 责任人 / 截止日期
 行号：3
 单元格：
-- 材料名称：施工照片
+- 材料名称：报关资料截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-30
 ```
 
@@ -22803,7 +22786,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 
 ```text
 用户问：验收材料清单里测试报告那一行是什么状态？
-相似 FAQ：验收需要提交哪些材料？
+相似 FAQ：单证审核需要提交哪些材料？
 
 这两个问题都包含“验收”“材料”“测试报告”，相似度可能不低。
 但 FAQ 回答的是材料范围，用户问的是某一行字段值。
@@ -22815,7 +22798,7 @@ params = _apply_table_preference(prefer_table, params["run_doc"], params, settin
 表格资料的答案必须能回到原始证据。当前项目在来源标签中追加工作表和行号：
 
 ```text
-[1] 验收清单.xlsx / 工作表：材料验收 / 第 3 行
+[1] 单证审核清单.xlsx / 工作表：材料审核 / 第 3 行
 ```
 
 另外，表格类问题经常涉及状态、金额、责任人、日期等精确值。LLM 有时会概括回答而漏掉某个关键单元格，所以项目里增加了表格行兜底：
@@ -22828,7 +22811,7 @@ def enforce_table_row_details(answer: str, context_docs: list[Document]) -> str:
 如果模型回答没有覆盖表格行里的核心字段，系统会追加：
 
 ```text
-表格行要点：状态：待补交；责任人：项目经理 [1]
+表格行要点：状态：待补交；责任人：关务负责人 [1]
 ```
 
 这不是替代 LLM，而是对表格精确字段的一层确定性保护。
@@ -22847,9 +22830,9 @@ Excel 和 CSV 入库可以概括为：
 
 ```text
 材料名称,状态,责任人,截止日期,备注
-施工图纸,已提交,设计负责人,2026-05-10,版本为 V3
-隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片
-验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021
+报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3
+单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片
+申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021
 ```
 
 下面这段代码用于在本地快速验证表格 loader 和切分策略。它不连接 Milvus，也不会改动线上知识库，只检查三件事：
@@ -22866,15 +22849,15 @@ from qa_core.indexing.table_documents import load_table_file
 from qa_core.intent.question_category import is_table_query
 
 
-csv_path = Path("reports/table_practice/acceptance_material_checklist.csv")
+csv_path = Path("reports/table_practice/customs_document_checklist.csv")
 csv_path.parent.mkdir(parents=True, exist_ok=True)
 csv_path.write_text(
     "\n".join(
         [
             "材料名称,状态,责任人,截止日期,备注",
-            "施工图纸,已提交,设计负责人,2026-05-10,版本为 V3",
-            "隐蔽工程照片,待补交,项目经理,2026-05-18,缺少二层西侧照片",
-            "验收测试报告,已通过,质量负责人,2026-05-20,检测编号 QA-2026-021",
+            "报关单与合同,已提交,单证负责人,2026-05-10,版本为 V3",
+            "单证审核截图,待补交,关务负责人,2026-05-18,缺少二层西侧照片",
+            "申报审核报告,已通过,合规负责人,2026-05-20,检测编号 QA-2026-021",
         ]
     ),
     encoding="utf-8-sig",
@@ -22895,7 +22878,7 @@ print(chunks[1].page_content)
 print("第二条 chunk metadata：")
 print(chunks[1].metadata)
 
-query = "验收清单里隐蔽工程照片是什么状态，责任人是谁？"
+query = "单证审核清单里单证审核截图是什么状态，责任人是谁？"
 print("是否表格类问题：", is_table_query(query))
 ```
 
@@ -22910,14 +22893,14 @@ print("是否表格类问题：", is_table_query(query))
 第二条 chunk 的正文应该仍然保留完整行记录，类似：
 
 ```text
-表格文件：acceptance_material_checklist.csv
+表格文件：customs_document_checklist.csv
 工作表：csv
 表头：材料名称 / 状态 / 责任人 / 截止日期 / 备注
 行号：2
 单元格：
-- 材料名称：隐蔽工程照片
+- 材料名称：单证审核截图
 - 状态：待补交
-- 责任人：项目经理
+- 责任人：关务负责人
 - 截止日期：2026-05-18
 - 备注：缺少二层西侧照片
 ```
@@ -22937,19 +22920,19 @@ metadata 中至少要看到这些字段：
 如果要把这个 CSV 真正放进知识库，可以把文件移动到某个场景的数据目录，例如：
 
 ```text
-scenarios/engineering_project_qa/data/quality_data/acceptance_material_checklist.csv
+scenarios/cross_border_risk/data/customs_data/customs_document_checklist.csv
 ```
 
 然后执行单场景重建：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-version --force --quality-gate --activate --description "table row ingestion practice"
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate --description "table row ingestion practice"
 ```
 
 入库后可以用检索诊断或页面提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 期望链路是：
@@ -22964,7 +22947,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 如果模型漏掉状态或责任人，后处理追加表格行要点
 ```
 
-建议把它放到工程项目资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
+建议把它放到跨境贸易资料问答场景的数据目录中，并按常规知识库重建流程入库。重点观察四件事：
 
 | 检查点 | 期望结果 | 为什么检查 |
 | --- | --- | --- |
@@ -22976,13 +22959,13 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 可以在页面或接口中提问：
 
 ```text
-验收清单里隐蔽工程照片是什么状态，责任人是谁？
+单证审核清单里单证审核截图是什么状态，责任人是谁？
 ```
 
 理想回答应该包含：
 
 - 状态是“待补交”；
-- 责任人是“项目经理”；
+- 责任人是“关务负责人”；
 - 引用来源能定位到 CSV/Excel 的对应行；
 - 如果模型遗漏状态或责任人，系统会追加“表格行要点”。
 
@@ -23017,7 +23000,7 @@ python scripts/rebuild_kb_version.py --scenario engineering_project_qa --new-ver
 
 | 概念 | 保存位置 | 作用 |
 | --- | --- | --- |
-| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_enterprise_knowledge_20260618_xxx`。 |
+| 知识库版本`kb_version` | MySQL`kb_versions`/`kb_active_versions` | 控制线上当前查哪个知识库版本，例如`kb_cross_border_risk_20260618_xxx`。 |
 | Manifest 记录 | MySQL`kb_document_manifests` | 记录某个文件在某个`kb_version`下生成了哪些 chunk，用于判断下次是否可以跳过、复用或重建。 |
 | Milvus chunk | Milvus collection | 保存真正用于检索的文本、向量和 metadata。 |
 
@@ -23139,7 +23122,7 @@ if (
 这是更常见的企业发布方式：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 这时目标版本是新的，例如：
@@ -23202,24 +23185,24 @@ _record_manifest(context, path, fingerprint, base_record.chunk_ids, settings)
 
 | 文件 | `kb_v1`Manifest | 状态 |
 | --- | --- | --- |
-| `hr/onboarding.md` | chunk`[hr_1, hr_2]` | 未变化 |
-| `finance/expense.md` | chunk`[fin_1, fin_2]` | 内容修改 |
-| `finance/budget_preapproval_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
+| `classification/classification.md` | chunk`[classification_1, classification_2]` | 未变化 |
+| `documents/settlement.md` | chunk`[settlement_1, settlement_2]` | 内容修改 |
+| `documents/settlement_matrix.xlsx` | chunk`[table_1, table_2]` | 文件被删除 |
 
 现在执行：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 系统创建新版本`kb_v2`，处理结果如下：
 
 | 文件 | 处理方式 | `kb_v2`结果 |
 | --- | --- | --- |
-| `hr/onboarding.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到入职资料，且不重新 embedding、不复制向量。 |
-| `finance/expense.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的报销资料内容。 |
-| `finance/budget_preapproval_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
-| 新增`it/vpn.md` | 重新加载、切分、embedding | `kb_v2`新增 VPN 资料。 |
+| `classification/classification.md` | `kb_v2`manifest 引用`kb_v1`的旧 chunk | `kb_v2`也能查到商品归类资料，且不重新 embedding、不复制向量。 |
+| `documents/settlement.md` | 旧 chunk 写`valid_to_seq=2`，新内容重新加载、切分、embedding | `kb_v2`使用新的贸易结算资料内容。 |
+| `documents/settlement_matrix.xlsx` | 旧 chunk 写`valid_to_seq=2` | `kb_v2`激活后查不到这份已删除资料。 |
+| 新增`documents/trade-system.md` | 重新加载、切分、embedding | `kb_v2`新增报关系统资料。 |
 
 最终线上激活后，文档检索按 active 版本序号解释有效期视图：
 
@@ -23329,10 +23312,10 @@ FAQ 使用 CSV 文件管理，每行一个问答对：
 
 ```text
 source,question,answer
-hr,入职需要准备哪些材料,入职当天需要携带：身份证原件及复印件、学历证书复印件、离职证明、体检报告、银行卡信息...
-hr,试用期转正流程是什么,试用期转正流程：1. 员工提交转正申请 2. 直属领导评估 3. HR 审核 4. 部门负责人审批...
-it,VPN 连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换 VPN 节点...
-billing,如何申请发票,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
+customs,报关需要准备哪些材料,申报前需要携带：商业发票与装箱单、原产地证复印件、贸易合同、报关委托书、收款账户信息...
+customs,跨境贸易单证审核流程是什么,单证审核与放行流程：1. 申报主体提交放行申请 2. 关务负责人复核 3. 关务审核 4. 关务负责人确认...
+documents,报关系统连接失败怎么办,请按以下步骤排查：1. 确认账号密码正确 2. 检查网络连接 3. 尝试切换报关系统节点...
+documents,跨境结算发票如何申请,在订单页面点击"申请发票"，选择发票类型（电子/纸质），填写发票抬头...
 ```
 
 ### 6.2 入库实现
@@ -23428,10 +23411,10 @@ FAQ metadata 里也会出现`valid_from_seq/valid_to_seq`，这是因为版本�
 
 ```bash
 # 预览将要清理的内容（默认 dry-run）
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk
 
 # 实际执行清理
-python scripts/kb/cleanup_missing_docs.py --scenario enterprise_knowledge --no-dry-run
+python scripts/kb/cleanup_missing_docs.py --scenario cross_border_risk --no-dry-run
 ```
 
 ### 7.2 cleanup\_missing\_document\_chunks 原理
@@ -23493,7 +23476,7 @@ def cleanup_missing_document_chunks(
 
 ### 8.1 这属于多模态吗
 
-导入文档中同时存在文字、图片、截图、扫描页、流程图、设备照片时，本质上已经进入了**多模态资料处理**范围。
+导入文档中同时存在文字、图片、截图、扫描页、流程图、货物照片时，本质上已经进入了**多模态资料处理**范围。
 
 但在当前一期项目里，它应该被定位为：
 
@@ -23515,7 +23498,7 @@ def cleanup_missing_document_chunks(
 
 - 合同扫描件；
 - 审批截图；
-- 设备告警截图；
+- 报关系统告警截图；
 - 流程图；
 - 验收照片；
 - 表格截图；
@@ -23551,7 +23534,7 @@ def cleanup_missing_document_chunks(
 如果后续引入 VLM 和图文块，再升级为：
 
 ```text
-图片/流程图/设备照片
+图片/流程图/货物照片
   -> OCR 或 VLM 生成候选说明
   -> 绑定附近正文、页码、图片编号
   -> 人工复核
@@ -23573,7 +23556,7 @@ def cleanup_missing_document_chunks(
 
 ```bash
 python scripts/ocr/run_offline_ocr.py --input-dir incoming_scans --output-dir reports/ocr/batch_001
-python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario engineering_project_qa --source quality --apply
+python scripts/ocr/promote_ocr_candidates.py --input-dir reports/ocr/batch_001 --scenario cross_border_risk --source documents --apply
 ```
 
 第一条命令只生成待复核资料，第二条命令才把复核后的 Markdown 提升到场景资料目录。提升后仍然要执行知识库版本重建、入库质量检查和 RAG 回归验收。
@@ -23638,9 +23621,7 @@ V1 已经闭环的部分是：
 
 ```text
 scenarios/                         当前正式知识库数据源
-  enterprise_knowledge/
-  equipment_ops/
-  ...
+  cross_border_risk/
 
 data_packs/enterprise_realistic_pack/   企业仿真增强资料包
   clean_overlay/                        可治理、可预检的增强候选资料
@@ -23667,7 +23648,7 @@ data_packs 是企业增强资料和脏数据治理隔离区。
 
 ```text
 第一层：scenarios
-  当前正式知识库，保证 8 个业务场景可稳定初始化、稳定验证。
+  当前正式知识库，保证跨境贸易场景可稳定初始化、稳定验证。
 
 第二层：clean_overlay
   企业增强候选资料，先预检、再计划激活、再回归评测。
@@ -23678,7 +23659,7 @@ data_packs 是企业增强资料和脏数据治理隔离区。
 
 ### 9.1 scenarios 是主链路数据源
 
-`scenarios/`是当前 8 个冻结业务场景的正式资料目录。执行下面命令时，默认读取的就是`scenarios/`：
+`scenarios/`是当前 1 个跨境贸易业务场景的正式资料目录。执行下面命令时，默认读取的就是`scenarios/`：
 
 ```bash
 python scripts/rebuild_scenarios.py --reset-collections
@@ -23687,16 +23668,16 @@ python scripts/rebuild_scenarios.py --reset-collections
 单场景重建也是一样：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
-所以首轮跑通主链路时只需要关心`scenarios/`，它保证主链路足够稳定、可控、可复现。8 个冻结业务场景都已经包含 Markdown、CSV、XLSX、DOCX、PPTX 和带中文文本层的 PDF 样例，用来验证多格式 loader、表格行入库和普通文档切分不是只停留在代码接口上。
+所以首轮跑通主链路时只需要关心`scenarios/`，它保证主链路足够稳定、可控、可复现。1 个跨境贸易业务场景都已经包含 Markdown、CSV、XLSX、DOCX、PPTX 和带中文文本层的 PDF 样例，用来验证多格式 loader、表格行入库和普通文档切分不是只停留在代码接口上。
 
 `scenarios/`的意义是：
 
 | 目标 | 说明 |
 | --- | --- |
-| 保证主链路可跑通 | 新环境初始化 8 个场景时，不依赖额外资料包。 |
+| 保证主链路可跑通 | 新环境初始化跨境贸易场景时，不依赖额外资料包。 |
 | 保证排查边界清晰 | 如果检索为空、版本未激活、loader 失败，可以先排查代码和环境，不被复杂资料干扰。 |
 | 保证测试稳定 | 测试、回归、项目文档示例都基于一组冻结资料，结果更容易复现。 |
 | 保证入库质量可控 | 资料格式覆盖足够多，但不会故意混入冲突、过期、噪声样本。 |
@@ -23710,8 +23691,8 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 - 审批链和补签流程；
 - 合同付款风险；
 - 跨境单证金额变更；
-- 理赔材料不一致；
-- SaaS 企业客户账单和集成问题。
+- 货损单证不一致；
+- 跨境贸易系统账单和接口问题。
 
 它不是 active 知识库的一部分，也不会被`rebuild_scenarios.py`自动读取。这样设计是为了避免“增强资料还没治理完，就污染正式知识库”。
 
@@ -23742,6 +23723,8 @@ clean_overlay
 
 常用命令：
 
+当前注册表仅包含`cross_border_risk`，因此下面的`--all-scenarios`只会构建跨境贸易数据；保留该参数是为了沿用通用脚本接口。
+
 ```bash
 python scripts/enterprise_overlay/build_enterprise_overlay_dataset.py --all-scenarios --output reports/verification/enterprise_overlay_build_latest.json
 python scripts/enterprise_overlay/check_enterprise_overlay_readiness.py --output reports/verification/enterprise_overlay_readiness_latest.json
@@ -23754,11 +23737,11 @@ python scripts/enterprise_overlay/run_enterprise_overlay_activation.py --plan re
 一个具体例子：
 
 ```text
-scenarios/enterprise_knowledge/
-  已有通用入职、报销、IT 支持资料。
+scenarios/cross_border_risk/
+  已有通用报关、贸易结算、贸易系统支持资料。
 
-data_packs/.../clean_overlay/enterprise_knowledge/
-  增加区域入职差异、付款阈值、特殊审批规则。
+data_packs/.../clean_overlay/cross_border_risk/
+  增加区域报关差异、付款阈值、特殊审批规则。
 ```
 
 如果在主链路初始资料中直接混入这些复杂规则，RAG 链路验证和资料治理问题会被混在一起；把它们放在企业增强阶段，可以把流程拆清楚：
@@ -23805,7 +23788,7 @@ python scripts/enterprise_overlay/analyze_dirty_enterprise_samples.py --output r
 
 | 看起来像什么 | 实际风险 |
 | --- | --- |
-| 一份扫描报销材料 | OCR 可能把金额、日期、票据号识别错。 |
+| 一份扫描贸易结算材料 | OCR 可能把金额、日期、票据号识别错。 |
 | 一份旧制度 | 可能和当前制度冲突，导致回答旧口径。 |
 | 一份表格导出 | 列名缺失、字段错位，检索到也无法可靠回答。 |
 | 一条 FAQ | 标准答案可能和正文资料相反。 |
@@ -23837,7 +23820,7 @@ python scripts/enterprise_overlay/analyze_dirty_enterprise_samples.py --output r
 
 | 目录 | 是否默认入库 | 作用 |
 | --- | --- | --- |
-| `scenarios/` | 是 | 当前正式知识库资料，8 场景初始化读取这里 |
+| `scenarios/` | 是 | 当前跨境贸易正式知识库资料，初始化时读取这里 |
 | `data_packs/.../clean_overlay/` | 否 | 企业仿真增强候选资料，预检通过后才能按计划激活 |
 | `data_packs/.../dirty_samples/` | 否 | 资料治理风险样本，只用于风险识别和清洗流程 |
 
@@ -23909,7 +23892,7 @@ BM25 Function / sparse 字段不兼容
 通常表示复用了旧 schema collection。处理方式是删除旧 collection 并重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 排查口径：
@@ -23930,7 +23913,7 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
   -> 最后再考虑调整阈值
 ```
 
-不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低质量资料只能停留在 STAGED，不会进入 active 知识库。
+不要为了让命令通过就尝试绕过质量门禁。当前脚本已把`--activate`和质量报告、质量门禁绑定在一起：要激活就必须先通过门禁，否则低审核资料只能停留在 STAGED，不会进入 active 知识库。
 
 ### 10.5 重建后页面还是旧答案
 
@@ -23947,9 +23930,9 @@ docker logs -f knowforge-api
 
 1. 是否有多个 Milvus 实例：宿主机脚本连的是`127.0.0.1:19530`，容器内脚本连的是`http://milvus:19530`。要确认两者指向同一个 Docker Compose 服务。
 
-### 10.6 八场景全量初始化的推荐命令
+### 10.6 跨境贸易场景全量初始化的推荐命令
 
-如果需要在新环境中一次性把全部 8 个场景初始化到可运行状态，使用：
+如果需要在新环境中一次性把当前跨境贸易场景初始化到可运行状态，使用：
 
 ```powershell
 if (!(Test-Path .env.compose)) { Copy-Item .env.compose.example .env.compose }
@@ -23959,7 +23942,7 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections
 ```
 
-如果之前已经存在知识库，只是资料内容变化，重建全部 8 个场景时不要删除 collection：
+如果之前已经存在知识库，只是资料内容变化，重建当前跨境贸易场景时不要删除 collection：
 
 ```bash
 docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py
@@ -24007,7 +23990,7 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_scena
 ```text
 答案不对的 5 种可能原因：
 1. 意图识别错了（本该 FAQ 直出，却走了文档 RAG）
-2. source 推断错了（该搜 HR 文档却搜了 IT 文档）
+2. source 推断错了（该搜 `customs` 关务资料却搜了 `documents` 系统资料）
 3. 检索召回了无关内容（Embedding 或 BM25 失效）
 4. 上下文构建截断了关键信息（max_context_chars 太小）
 5. LLM 生成了幻觉（Prompt 约束不够）
@@ -24138,7 +24121,7 @@ metadata = {
 
 **设计要点**：
 
-- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、薪酬信息）不应进入外部平台
+- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、结算信息）不应进入外部平台
 - **trace\_id 使用项目 UUID**——可在 LangSmith UI 中搜索`trace_id`直接定位
 - **tags**自动包含`scenario_id`和`hit_type`，支持在 LangSmith 中按场景和命中路径过滤
 - **LangSmith SDK 懒加载**——只有启用 Trace 且 API Key 存在时才导入`langsmith.run_helpers.trace`；本地没装 LangSmith 或版本不匹配时只记录 warning，不影响问答链路和本地评测
@@ -24211,7 +24194,7 @@ FAQ 快速探测的请求内候选复用还要结合以下字段判断：
 ### 3.3 一个线上排查示例
 
 ```text
-用户问题：VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+用户问题：报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 
 Trace 现象：
 - hit_type = rag
@@ -24226,16 +24209,16 @@ Trace 现象：
 再看另一种情况：
 
 ```text
-用户问题：新人入职异地办理需要哪些材料？
+用户问题：跨境贸易资料审核异地办理需要哪些材料？
 
 Trace 现象：
 - hit_type = insufficient_context
 - sources_count = 0
-- kb_version = kb_enterprise_knowledge_xxx
-- effective_source = hr
+- kb_version = kb_cross_border_risk_xxx
+- effective_source = customs
 ```
 
-这更像资料覆盖、版本或过滤条件问题。本节负责确认 trace 证据；确认后交给项目阶段 14，把它沉淀为回归样本，标注`expected_source=hr`、`expected_hit_type=rag`、`expected_keywords=["入职材料", "劳动合同", "审批"]`。
+这更像资料覆盖、版本或过滤条件问题。本节负责确认 trace 证据；确认后交给项目阶段 14，把它沉淀为回归样本，标注`expected_source=customs`、`expected_hit_type=rag`、`expected_keywords=["报关材料", "贸易合同", "审批"]`。
 
 ### 3.4 与项目阶段 14的分工
 
@@ -24277,7 +24260,7 @@ Pipeline 结束时（qa_core/pipeline/rag.py）
 
 ### 5.1 生产部署拓扑
 
-本项目当前适合中小规模知识库和企业内部门户场景，推荐的最小生产拓扑如下：
+本项目当前适合中小规模知识库和跨境贸易业务门户场景，推荐的最小生产拓扑如下：
 
 ```mermaid
 flowchart LR
@@ -24491,7 +24474,7 @@ hey -n 1000 -c 20 http://192.168.88.100:8001/health
 ```text
 hey -n 200 -c 10 -m POST \
   -H "Content-Type: application/json" \
-  -d '{"query":"新人入职需要完成哪些流程？","scenario_id":"enterprise_knowledge"}' \
+  -d '{"query":"跨境贸易资料审核需要完成哪些流程？","scenario_id":"cross_border_risk"}' \
   http://192.168.88.100:8001/api/retrieval/debug
 ```
 
@@ -24505,8 +24488,8 @@ import websockets
 
 URL = "ws://192.168.88.100:8001/api/stream"
 PAYLOAD = {
-    "question": "新人入职需要完成哪些流程？",
-    "scenario_id": "enterprise_knowledge",
+    "question": "跨境贸易资料审核需要完成哪些流程？",
+    "scenario_id": "cross_border_risk",
 }
 
 async def one_user(i: int):
@@ -24589,7 +24572,7 @@ docker logs -f knowforge-api
 如果 Milvus schema 或入库逻辑变化，必须先重建知识库。已有知识库只更新资料内容时不加`--reset-collections`；只有旧 collection schema 不兼容时才删除 collection 重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ### 5.8 生产事故排查案例
@@ -24620,11 +24603,11 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
 
 ### 5.9 可选扩展边界
 
-当前版本先把企业级多场景 RAG 主链路做稳。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
+当前版本先把跨境贸易 RAG 主链路做稳，同时保留场景注册与隔离扩展能力。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
 
 | 版本 | 建议范围 | 说明 |
 | --- | --- | --- |
-| 一期 | 多场景 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可讲、可跑、可验收 |
+| 一期 | 跨境贸易 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可运行、可验证、可交付 |
 | 可选扩展 | 轻量 GraphRAG、OCR/VLM 入库增强、自动评测集扩展 | 作为企业项目亮点，不影响现有 RAG 主链路 |
 | 暂不主推 | 完整视觉聊天、强依赖 Neo4j 的重图谱平台 | 成本和不可控性较高，容易冲淡主线 |
 
@@ -24678,7 +24661,7 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
 传统软件测试通常是二元的（通过/失败）。但 RAG 系统的输出是**自然语言文本**，不能简单地用`assertEqual(expected, actual)`来判断。
 
 ```text
-问题："入职流程有哪些步骤"
+问题："HS 编码归类流程有哪些步骤"
 
 预期行为：
   ✅ 召回了正确的文档片段（检索质量）
@@ -24746,7 +24729,7 @@ flowchart TD
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --scenario enterprise_knowledge
+    --scenario cross_border_risk
 ```
 
 生成报告覆盖以下维度：
@@ -24796,7 +24779,7 @@ def _polarity(text: str) -> str:
 
 **为什么用 jieba.cut\_for\_search 而不是简单正则**：
 
-`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员密码重置"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
+`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员申报账号恢复"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
 
 真实冲突检测分两步，不使用一个虚构的“冲突相似度”：
 
@@ -24837,7 +24820,7 @@ unique_ratio = 去空白后不同字符数量 / 去空白后字符总数
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --report reports/ingestion/enterprise_knowledge_phase1_gate_check.json
+    --report reports/ingestion/cross_border_risk_phase1_gate_check.json
 ```
 
 这里要区分两个概念：
@@ -24876,19 +24859,19 @@ python scripts/quality/check_ingestion_quality_gate.py \
 // eval_sets/multi_scenario_smoke.json
 [
     {
-        "scenario_id": "enterprise_knowledge",
-        "query": "入职流程有哪些步骤",
-        "expected_source": "hr",
+        "scenario_id": "cross_border_risk",
+        "query": "HS 编码归类流程有哪些步骤",
+        "expected_source": "classification",
         "expected_hit_type": "rag",
-        "expected_keywords": ["入职", "流程", "步骤", "材料", "合同"],
+        "expected_keywords": ["报关", "流程", "步骤", "材料", "合同"],
         "min_expected_sources": 2
     },
     {
-        "scenario_id": "enterprise_knowledge",
-        "query": "忘记密码怎么办",
-        "expected_source": "it",
+        "scenario_id": "cross_border_risk",
+        "query": "申报账号异常怎么办",
+        "expected_source": "documents",
         "expected_hit_type": "faq_direct",
-        "expected_keywords": ["密码", "重置", "邮箱", "手机"],
+        "expected_keywords": ["账号", "异常", "恢复", "申报"],
         "min_expected_sources": 1
     }
 ]
@@ -25076,17 +25059,17 @@ python scripts/quality/check_evaluation_gate.py --report reports/evaluation/core
 
 ```text
 以测试样本为例：
-  查询："入职流程有哪些步骤"
-  期望关键词：["入职", "流程", "步骤", "材料", "合同"]
+  查询："HS 编码归类流程有哪些步骤"
+  期望关键词：["报关", "流程", "步骤", "材料", "合同"]
 
 召回结果（Top-5 文档片段）：
-  [1] "入职流程包括以下步骤：1. 提交个人材料..." → 命中：入职, 流程, 步骤, 材料 ✅
-  [2] "新员工入职当天需要携带身份证、学历证书..." → 命中：入职 ✅
-  [3] "劳动合同应在入职后一个月内签订..." → 命中：合同 ✅
-  [4] "培训安排将在入职第二周进行..." → 命中：入职 ✅
-  [5] "员工福利包括五险一金、带薪年假..." → 命中：无 ❌
+  [1] "HS 编码归类流程包括以下步骤：1. 提交商品与贸易资料..." → 命中：报关, 流程, 步骤, 材料 ✅
+  [2] "出口资料提交当天需要携带商业发票、装箱单..." → 命中：报关 ✅
+  [3] "贸易合同应在申报后一个月内签订..." → 命中：合同 ✅
+  [4] "单证复核安排将在申报第二周进行..." → 命中：报关 ✅
+  [5] "跨境贸易费用包括运费、保险费和仓储费..." → 命中：无 ❌
 
-已覆盖的关键词：{"入职", "流程", "步骤", "材料", "合同"} → 5/5 = 1.0
+已覆盖的关键词：{"报关", "流程", "步骤", "材料", "合同"} → 5/5 = 1.0
 ```
 ```python
 def recall_at_k(expected_keywords, retrieved_docs, k=5):
@@ -25103,7 +25086,7 @@ def recall_at_k(expected_keywords, retrieved_docs, k=5):
     return len(covered) / len(expected_keywords)
 
 # 手算验证
-expected = ["入职", "流程", "步骤", "材料", "合同"]
+expected = ["报关", "流程", "步骤", "材料", "合同"]
 recalled_docs = [...]  # 上面 5 个文档
 print(recall_at_k(expected, recalled_docs, k=5))  # 5/5 = 1.0
 
@@ -25130,18 +25113,18 @@ print(recall_at_k(expected, recalled_docs, k=2))  # 4/5 = 0.8
 ```text
 假设有 3 个测试查询：
 
-查询 1："入职流程有哪些步骤"
+查询 1："HS 编码归类流程有哪些步骤"
   召回结果：[doc_A(0.92), doc_B(0.85), doc_C(0.78), ...]
   第一个相关文档是 doc_A，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
 
-查询 2："VPN 连不上怎么办"
+查询 2："报关系统连接不上怎么办"
   召回结果：[doc_X(0.78), doc_Y(0.75), doc_Z(0.71), ...]
   前两个都不相关（虽然分数高，但内容不匹配）
   第一个相关文档是 doc_Z，排名第 3 位
   → Reciprocal Rank = 1/3 ≈ 0.333
 
-查询 3："员工报销需要准备哪些材料"
+查询 3："跨境贸易报关需要准备哪些材料"
   召回结果：[doc_M(0.95), doc_N(0.82), ...]
   第一个相关文档是 doc_M，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
@@ -25220,22 +25203,22 @@ def keyword_coverage(expected_keywords, retrieved_docs):
 
 ```json
 {
-    "scenario_id": "engineering_project_qa",
-    "query": "隐蔽工程验收需要哪些资料",
-    "expected_source": "quality",
+    "scenario_id": "cross_border_risk",
+    "query": "跨境贸易单证审核需要哪些资料",
+    "expected_source": "documents",
     "expected_hit_type": "rag",
     "expected_keywords": [
-        "隐蔽工程",
+        "单证审核",
         "验收",
-        "质量验收报告",
-        "隐蔽工程验收记录",
-        "材料检测报告",
-        "功能性试验报告"
+        "单证审核报告",
+        "单证审核记录",
+        "商品资料核验报告",
+        "系统申报测试报告"
     ],
     "expected_prompt_profile": "knowledge_answer",
     "min_expected_sources": 3,
-    "relevant_doc_id": "engineering_project_qa/doc_chunk_quality_042",
-    "notes": "期望从 quality 分类召回，覆盖至少 3 个关键词，使用 knowledge_answer 模板"
+    "relevant_doc_id": "cross_border_risk/doc_chunk_documents_042",
+    "notes": "期望从 documents 分类召回，覆盖至少 3 个关键词，使用 knowledge_answer 模板"
 }
 ```
 
@@ -25325,14 +25308,14 @@ flowchart TD
 
 #### 5.1.2 完整案例：FAQ 误直出怎么排查
 
-以`near_expense_tax_risk`这类样本为例，问题是“报销材料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
+以`near_settlement_tax_risk`这类样本为例，问题是“贸易结算资料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
 
 1. 先看`evaluate_intent_policy.py`。如果这条样本在意图层已经被分成`KNOWLEDGE_QUERY`或保守路线，说明入口判断基本没错。
 2. 再看`calibrate_thresholds.py`。如果当前 FAQ 直出候选的`false_direct_rate`偏高，说明阈值太松，不该让相似 FAQ 过早直出。
 3. 再看`evaluate_core_chain.py`。如果主链路里这条样本仍然变成`faq_direct`，而不是进入 RAG，那么问题就不是检索召回，而是 FAQ 直出保护线不够严。
 4. 处理动作不是先改`DOC_TOP_K`，而是先提高`FAQ_DIRECT_SCORE_THRESHOLD`或风险类 direct threshold，再重新跑评测和门禁。
 
-同样地，如果样本是“新员工入职第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
+同样地，如果样本是“出口资料提交第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
 
 ### 5.2 先看一个具体 Bad Case
 
@@ -25345,20 +25328,20 @@ Bad Case 不是一句“答案不对”，而是一条能复现、能标注、�
 用户提问：
 
 ```text
-VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 ```
 
 系统回答：
 
 ```text
-可以先重启 VPN 客户端，确认网络正常；如果仍然无法连接，请提交 IT 工单。
+可以先重启报关系统客户端，确认网络正常；如果仍然无法连接，请提交贸易系统工单。
 ```
 
 这个回答看起来不算错，但它没有分别回答三个排查项：
 
 | 用户问到的点 | 期望回答 | 当前回答是否覆盖 |
 | --- | --- | --- |
-| VPN 客户端版本 | 确认是否为 IT 发布的最新版，旧版本需重新安装 | 否 |
+| 报关系统客户端版本 | 确认是否为贸易系统发布的最新版，旧版本需重新安装 | 否 |
 | 账号锁定 | 检查账号是否过期、锁定或权限被回收 | 否 |
 | 公网 IP | 判断当前公网 IP 是否在允许范围或是否被安全策略拦截 | 否 |
 
@@ -25370,8 +25353,8 @@ VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么
 
 ```json
 {
-  "scenario_id": "enterprise_knowledge",
-  "kb_version": "kb_enterprise_knowledge_20260620_082630_4c1df17a",
+  "scenario_id": "cross_border_risk",
+  "kb_version": "kb_cross_border_risk_20260620_082630_4c1df17a",
   "intent": "KNOWLEDGE_QUERY",
   "question_category": "troubleshooting",
   "prompt_profile": "troubleshooting_steps",
@@ -25439,10 +25422,10 @@ flowchart LR
 ```bash
 python scripts/evaluate_core_chain.py --dataset eval_sets/multi_scenario_smoke.json --limit 20 --output reports/evaluation/core_chain_latest.json
 python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core_chain_latest.json --output eval_sets/local_bad_cases.json
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --output eval_sets/local_feedback_bad_cases.json
-python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/enterprise_it_troubleshooting_cases.json
-python scripts/evaluate_core_chain.py --dataset eval_sets/enterprise_it_troubleshooting_cases.json --output reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
-python scripts/quality/check_evaluation_gate.py --report reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --output eval_sets/local_feedback_bad_cases.json
+python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/cross_border_trade_cases.json
+python scripts/evaluate_core_chain.py --dataset eval_sets/cross_border_trade_cases.json --output reports/evaluation/cross_border_trade_cases_latest.json
+python scripts/quality/check_evaluation_gate.py --report reports/evaluation/cross_border_trade_cases_latest.json
 ```
 
 如果要把这条闭环直接挂到发布入口，可以运行`python scripts/verify_v1_release.py --include-evaluation --include-docker`。这条命令会一次性产出评测报告、门禁摘要和 Bad Case 候选，作为项目发布前的统一验收动作。
@@ -25480,7 +25463,7 @@ python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core
 用户点踩反馈的处理方式类似，但它不是评测真值，不能直接进入正式回归集。`export_feedback_bad_cases.py`只导出复核草稿：
 
 ```bash
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --rating not_useful --output eval_sets/local_feedback_bad_cases.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --rating not_useful --output eval_sets/local_feedback_bad_cases.json
 ```
 
 导出的样本会保留：
@@ -25497,29 +25480,29 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.6 人工复核怎么填
 
-脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以 VPN 示例为例，样本可以这样写：
+脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以报关系统示例为例，样本可以这样写：
 
 ```json
 {
-  "case_id": "bad_enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
-  "scenario_id": "enterprise_knowledge",
-  "source_filter": "it",
+  "case_id": "bad_cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
+  "scenario_id": "cross_border_risk",
+  "source_filter": "documents",
   "expected_hit_type": "rag",
-  "expected_effective_source": "it",
+  "expected_effective_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_source_contains": [
-    "it_support.md",
-    "VPN 连接排查"
+    "documents/trade-system.md",
+    "报关系统连接排查"
   ],
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
-  "grading_notes": "答案必须分别说明客户端版本、账号锁定、公网 IP 三个排查项，不能只给泛泛重启建议。"
+  "grading_notes": "答案必须分别说明客户端版本、申报账号锁定、出口 IP 三个排查项，不能只给泛泛重启建议。"
 }
 ```
 
@@ -25536,15 +25519,15 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.7 提升为评测样本
 
-复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/enterprise_it_troubleshooting_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
+复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/cross_border_trade_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
 
 建议按问题类型拆分文件，避免所有 Bad Case 混成一个大池子：
 
 | 文件 | 放什么样本 | 示例 |
 | --- | --- | --- |
 | `eval_sets/local_bad_cases.json` | 临时复核出的失败样本 | 最近一次评测失败项 |
-| `eval_sets/enterprise_it_troubleshooting_cases.json` | IT 排障类正式回归集 | VPN、账号锁定、工单、权限回收 |
-| `eval_sets/finance_reimbursement_cases.json` | 财务报销类正式回归集 | 发票、预算、审批、付款材料 |
+| `eval_sets/cross_border_trade_cases.json` | 贸易系统排障类正式回归集 | 报关系统、账号锁定、工单、权限回收 |
+| `eval_sets/cross_border_settlement_cases.json` | 贸易结算类正式回归集 | 发票、预算、审批、付款材料 |
 | `eval_sets/multi_turn_followup_cases.json` | 多轮追问正式回归集 | “那审批呢”“材料呢”“谁负责” |
 
 进入`eval_sets/`后，这条样本就不再只是一次线上记录，而是以后每次版本变更都要验证的质量资产。
@@ -25615,20 +25598,20 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ### 5.9 这条 Bad Case 如何影响 Gate
 
-把 VPN 示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
+把报关系统示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
+  "case_id": "cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
   "expected_hit_type": "rag",
-  "expected_source": "it",
+  "expected_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
   "actual_hit_type": "rag",
@@ -25655,7 +25638,7 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
+  "case_id": "cross_border_trade_system_sub_questions_001",
   "actual_hit_type": "rag",
   "actual_source_hit": true,
   "actual_prompt_profile": "troubleshooting_steps",
@@ -26058,7 +26041,7 @@ INTENT_MODEL_PATH=./models/bert_intent_classifier_v1
 | 宿主机目录 | 容器目录 | 用途 |
 | --- | --- | --- |
 | `./models` | `/app/models` | 本地 Embedding / Reranker 模型 |
-| `./scenarios` | `/app/scenarios` | 8 个业务场景资料 |
+| `./scenarios` | `/app/scenarios` | 跨境贸易业务场景资料 |
 | `./reports` | `/app/reports` | 入库、评测、验收报告 |
 | `./logs` | `/app/logs` | 应用日志 |
 | `./site` | `/app/site` | MkDocs 构建后的项目文档站点 |
@@ -26102,7 +26085,7 @@ docker compose --env-file .env.compose down
 
 ```text
 APP_ENV=dev
-ACTIVE_SCENARIO_ID=enterprise_knowledge
+ACTIVE_SCENARIO_ID=cross_border_risk
 API_PORT=8000
 ENV_FILE=.env.compose
 
@@ -26185,13 +26168,13 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose ps
 ```
 ```
-5.3初始化8个业务场景
+5.3初始化跨境贸易业务场景
 ```
 
-首次部署建议重建全部场景：
+首次部署建议重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init all scenarios"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init cross-border trade"
 ```
 
 这条命令会在 API 容器里执行入库脚本，使用容器内的：
@@ -26221,22 +26204,22 @@ docker compose --env-file .env.compose logs --tail 80 api
 5.5单场景更新
 ```
 
-只更新一个场景时，不需要重建全部 8 个场景：
+只更新一个场景时，不需要重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 如果只是日常资料变更，推荐使用引用式增量版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 只有在 Milvus collection schema 不兼容、BM25 Function 字段变化或需要清空重建时，才使用：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ---
@@ -26288,7 +26271,7 @@ python scripts/deploy/verify_fresh_docker_deploy.py --evaluation-limit 3 --perfo
 2. 启动 mysql / redis / etcd / minio / milvus
 3. 检查或构建基础镜像
 4. 构建 api 镜像
-5. 初始化全部 8 个业务场景
+5. 初始化跨境贸易业务场景
 6. 启动 api
 7. 执行项目发布验收：评测门禁 + 性能门禁 + Docker 集成检查
 8. 执行 API 冒烟和缓存冒烟
@@ -26333,7 +26316,7 @@ python scripts/verify_v1_release.py --include-evaluation --include-performance -
 | Python 编译 | 主项目和测试文件语法正确 |
 | 项目文档构建 | `mkdocs build --strict`通过 |
 | 章节实践代码对齐 | `codealong`与主项目关键文件一致 |
-| 项目守护规则 | 关键边界、依赖、冻结场景符合约束 |
+| 项目守护规则 | 关键边界、依赖、当前跨境贸易场景符合约束 |
 | Compose config | Docker Compose 配置可解析 |
 | 主链路评测 | `--include-evaluation --include-docker`会在 api 容器里生成评测报告、执行评测门禁并导出 Bad Case 候选 |
 | 性能门禁 | `--include-performance --include-docker`会在 api 容器里采集首 token、总耗时、阶段耗时并执行性能门禁 |
@@ -26440,7 +26423,7 @@ Windows Docker Desktop 一般不会遇到同样的 ownership 问题。
 确认 active 版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('enterprise_knowledge'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
+docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('cross_border_risk'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
 ```
 ```
 8.6修改代码后页面还是旧效果
@@ -26523,7 +26506,7 @@ Docker 交付前按下面顺序检查：
 传统软件测试通常是二元的（通过/失败）。但 RAG 系统的输出是**自然语言文本**，不能简单地用`assertEqual(expected, actual)`来判断。
 
 ```text
-问题："入职流程有哪些步骤"
+问题："HS 编码归类流程有哪些步骤"
 
 预期行为：
   ✅ 召回了正确的文档片段（检索质量）
@@ -26591,7 +26574,7 @@ flowchart TD
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --scenario enterprise_knowledge
+    --scenario cross_border_risk
 ```
 
 生成报告覆盖以下维度：
@@ -26641,7 +26624,7 @@ def _polarity(text: str) -> str:
 
 **为什么用 jieba.cut\_for\_search 而不是简单正则**：
 
-`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员密码重置"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
+`cut_for_search`是 jieba 的搜索模式分词，会同时输出原词和更细粒度的子词。例如"管理员申报账号恢复"会被分为`["管理员", "管理", "密码", "重置"]`，这样"用户密码修改"也能匹配到"密码"这个公共关键词。
 
 真实冲突检测分两步，不使用一个虚构的“冲突相似度”：
 
@@ -26682,7 +26665,7 @@ unique_ratio = 去空白后不同字符数量 / 去空白后字符总数
 
 ```bash
 python scripts/quality/check_ingestion_quality_gate.py \
-    --report reports/ingestion/enterprise_knowledge_phase1_gate_check.json
+    --report reports/ingestion/cross_border_risk_phase1_gate_check.json
 ```
 
 这里要区分两个概念：
@@ -26721,19 +26704,19 @@ python scripts/quality/check_ingestion_quality_gate.py \
 // eval_sets/multi_scenario_smoke.json
 [
     {
-        "scenario_id": "enterprise_knowledge",
-        "query": "入职流程有哪些步骤",
-        "expected_source": "hr",
+        "scenario_id": "cross_border_risk",
+        "query": "HS 编码归类流程有哪些步骤",
+        "expected_source": "classification",
         "expected_hit_type": "rag",
-        "expected_keywords": ["入职", "流程", "步骤", "材料", "合同"],
+        "expected_keywords": ["报关", "流程", "步骤", "材料", "合同"],
         "min_expected_sources": 2
     },
     {
-        "scenario_id": "enterprise_knowledge",
-        "query": "忘记密码怎么办",
-        "expected_source": "it",
+        "scenario_id": "cross_border_risk",
+        "query": "申报账号异常怎么办",
+        "expected_source": "documents",
         "expected_hit_type": "faq_direct",
-        "expected_keywords": ["密码", "重置", "邮箱", "手机"],
+        "expected_keywords": ["账号", "异常", "恢复", "申报"],
         "min_expected_sources": 1
     }
 ]
@@ -26921,17 +26904,17 @@ python scripts/quality/check_evaluation_gate.py --report reports/evaluation/core
 
 ```text
 以测试样本为例：
-  查询："入职流程有哪些步骤"
-  期望关键词：["入职", "流程", "步骤", "材料", "合同"]
+  查询："HS 编码归类流程有哪些步骤"
+  期望关键词：["报关", "流程", "步骤", "材料", "合同"]
 
 召回结果（Top-5 文档片段）：
-  [1] "入职流程包括以下步骤：1. 提交个人材料..." → 命中：入职, 流程, 步骤, 材料 ✅
-  [2] "新员工入职当天需要携带身份证、学历证书..." → 命中：入职 ✅
-  [3] "劳动合同应在入职后一个月内签订..." → 命中：合同 ✅
-  [4] "培训安排将在入职第二周进行..." → 命中：入职 ✅
-  [5] "员工福利包括五险一金、带薪年假..." → 命中：无 ❌
+  [1] "HS 编码归类流程包括以下步骤：1. 提交商品与贸易资料..." → 命中：报关, 流程, 步骤, 材料 ✅
+  [2] "出口资料提交当天需要携带商业发票、装箱单..." → 命中：报关 ✅
+  [3] "贸易合同应在申报后一个月内签订..." → 命中：合同 ✅
+  [4] "单证复核安排将在申报第二周进行..." → 命中：报关 ✅
+  [5] "跨境贸易费用包括运费、保险费和仓储费..." → 命中：无 ❌
 
-已覆盖的关键词：{"入职", "流程", "步骤", "材料", "合同"} → 5/5 = 1.0
+已覆盖的关键词：{"报关", "流程", "步骤", "材料", "合同"} → 5/5 = 1.0
 ```
 ```python
 def recall_at_k(expected_keywords, retrieved_docs, k=5):
@@ -26948,7 +26931,7 @@ def recall_at_k(expected_keywords, retrieved_docs, k=5):
     return len(covered) / len(expected_keywords)
 
 # 手算验证
-expected = ["入职", "流程", "步骤", "材料", "合同"]
+expected = ["报关", "流程", "步骤", "材料", "合同"]
 recalled_docs = [...]  # 上面 5 个文档
 print(recall_at_k(expected, recalled_docs, k=5))  # 5/5 = 1.0
 
@@ -26975,18 +26958,18 @@ print(recall_at_k(expected, recalled_docs, k=2))  # 4/5 = 0.8
 ```text
 假设有 3 个测试查询：
 
-查询 1："入职流程有哪些步骤"
+查询 1："HS 编码归类流程有哪些步骤"
   召回结果：[doc_A(0.92), doc_B(0.85), doc_C(0.78), ...]
   第一个相关文档是 doc_A，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
 
-查询 2："VPN 连不上怎么办"
+查询 2："报关系统连接不上怎么办"
   召回结果：[doc_X(0.78), doc_Y(0.75), doc_Z(0.71), ...]
   前两个都不相关（虽然分数高，但内容不匹配）
   第一个相关文档是 doc_Z，排名第 3 位
   → Reciprocal Rank = 1/3 ≈ 0.333
 
-查询 3："员工报销需要准备哪些材料"
+查询 3："跨境贸易报关需要准备哪些材料"
   召回结果：[doc_M(0.95), doc_N(0.82), ...]
   第一个相关文档是 doc_M，排名第 1 位
   → Reciprocal Rank = 1/1 = 1.0
@@ -27065,22 +27048,22 @@ def keyword_coverage(expected_keywords, retrieved_docs):
 
 ```json
 {
-    "scenario_id": "engineering_project_qa",
-    "query": "隐蔽工程验收需要哪些资料",
-    "expected_source": "quality",
+    "scenario_id": "cross_border_risk",
+    "query": "跨境贸易单证审核需要哪些资料",
+    "expected_source": "documents",
     "expected_hit_type": "rag",
     "expected_keywords": [
-        "隐蔽工程",
+        "单证审核",
         "验收",
-        "质量验收报告",
-        "隐蔽工程验收记录",
-        "材料检测报告",
-        "功能性试验报告"
+        "单证审核报告",
+        "单证审核记录",
+        "商品资料核验报告",
+        "系统申报测试报告"
     ],
     "expected_prompt_profile": "knowledge_answer",
     "min_expected_sources": 3,
-    "relevant_doc_id": "engineering_project_qa/doc_chunk_quality_042",
-    "notes": "期望从 quality 分类召回，覆盖至少 3 个关键词，使用 knowledge_answer 模板"
+    "relevant_doc_id": "cross_border_risk/doc_chunk_documents_042",
+    "notes": "期望从 documents 分类召回，覆盖至少 3 个关键词，使用 knowledge_answer 模板"
 }
 ```
 
@@ -27170,14 +27153,14 @@ flowchart TD
 
 #### 5.1.2 完整案例：FAQ 误直出怎么排查
 
-以`near_expense_tax_risk`这类样本为例，问题是“报销材料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
+以`near_settlement_tax_risk`这类样本为例，问题是“贸易结算资料齐全是否代表不存在税务风险”。它看起来像 FAQ，但业务上不该被当成安全直答。
 
 1. 先看`evaluate_intent_policy.py`。如果这条样本在意图层已经被分成`KNOWLEDGE_QUERY`或保守路线，说明入口判断基本没错。
 2. 再看`calibrate_thresholds.py`。如果当前 FAQ 直出候选的`false_direct_rate`偏高，说明阈值太松，不该让相似 FAQ 过早直出。
 3. 再看`evaluate_core_chain.py`。如果主链路里这条样本仍然变成`faq_direct`，而不是进入 RAG，那么问题就不是检索召回，而是 FAQ 直出保护线不够严。
 4. 处理动作不是先改`DOC_TOP_K`，而是先提高`FAQ_DIRECT_SCORE_THRESHOLD`或风险类 direct threshold，再重新跑评测和门禁。
 
-同样地，如果样本是“新员工入职第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
+同样地，如果样本是“出口资料提交第一天要完成什么”，却被拖进了 RAG，多数情况下应该先反向检查是不是阈值过高，而不是先把文档召回池无限放大。
 
 ### 5.2 先看一个具体 Bad Case
 
@@ -27190,20 +27173,20 @@ Bad Case 不是一句“答案不对”，而是一条能复现、能标注、�
 用户提问：
 
 ```text
-VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 ```
 
 系统回答：
 
 ```text
-可以先重启 VPN 客户端，确认网络正常；如果仍然无法连接，请提交 IT 工单。
+可以先重启报关系统客户端，确认网络正常；如果仍然无法连接，请提交贸易系统工单。
 ```
 
 这个回答看起来不算错，但它没有分别回答三个排查项：
 
 | 用户问到的点 | 期望回答 | 当前回答是否覆盖 |
 | --- | --- | --- |
-| VPN 客户端版本 | 确认是否为 IT 发布的最新版，旧版本需重新安装 | 否 |
+| 报关系统客户端版本 | 确认是否为贸易系统发布的最新版，旧版本需重新安装 | 否 |
 | 账号锁定 | 检查账号是否过期、锁定或权限被回收 | 否 |
 | 公网 IP | 判断当前公网 IP 是否在允许范围或是否被安全策略拦截 | 否 |
 
@@ -27215,8 +27198,8 @@ VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么
 
 ```json
 {
-  "scenario_id": "enterprise_knowledge",
-  "kb_version": "kb_enterprise_knowledge_20260620_082630_4c1df17a",
+  "scenario_id": "cross_border_risk",
+  "kb_version": "kb_cross_border_risk_20260620_082630_4c1df17a",
   "intent": "KNOWLEDGE_QUERY",
   "question_category": "troubleshooting",
   "prompt_profile": "troubleshooting_steps",
@@ -27284,10 +27267,10 @@ flowchart LR
 ```bash
 python scripts/evaluate_core_chain.py --dataset eval_sets/multi_scenario_smoke.json --limit 20 --output reports/evaluation/core_chain_latest.json
 python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core_chain_latest.json --output eval_sets/local_bad_cases.json
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --output eval_sets/local_feedback_bad_cases.json
-python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/enterprise_it_troubleshooting_cases.json
-python scripts/evaluate_core_chain.py --dataset eval_sets/enterprise_it_troubleshooting_cases.json --output reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
-python scripts/quality/check_evaluation_gate.py --report reports/evaluation/enterprise_it_troubleshooting_cases_latest.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --output eval_sets/local_feedback_bad_cases.json
+python scripts/promote_bad_cases_to_regression.py --source eval_sets/local_bad_cases.json --target eval_sets/cross_border_trade_cases.json
+python scripts/evaluate_core_chain.py --dataset eval_sets/cross_border_trade_cases.json --output reports/evaluation/cross_border_trade_cases_latest.json
+python scripts/quality/check_evaluation_gate.py --report reports/evaluation/cross_border_trade_cases_latest.json
 ```
 
 如果要把这条闭环直接挂到封版入口，可以运行`python scripts/verify_v1_release.py --include-evaluation --include-docker`。这条命令会一次性产出评测报告、门禁摘要和 Bad Case 候选，作为 V1 发布前的统一验收动作。
@@ -27325,7 +27308,7 @@ python scripts/extract_bad_cases_from_report.py --report reports/evaluation/core
 用户点踩反馈的处理方式类似，但它不是评测真值，不能直接进入正式回归集。`export_feedback_bad_cases.py`只导出复核草稿：
 
 ```bash
-python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --rating not_useful --output eval_sets/local_feedback_bad_cases.json
+python scripts/export_feedback_bad_cases.py --scenario cross_border_risk --rating not_useful --output eval_sets/local_feedback_bad_cases.json
 ```
 
 导出的样本会保留：
@@ -27342,29 +27325,29 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.6 人工复核怎么填
 
-脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以 VPN 示例为例，样本可以这样写：
+脚本生成的`eval_sets/local_bad_cases.json`不是最终答案，而是复核草稿。人工复核要把“哪里不对”补成可评测字段。以报关系统示例为例，样本可以这样写：
 
 ```json
 {
-  "case_id": "bad_enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
-  "scenario_id": "enterprise_knowledge",
-  "source_filter": "it",
+  "case_id": "bad_cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
+  "scenario_id": "cross_border_risk",
+  "source_filter": "documents",
   "expected_hit_type": "rag",
-  "expected_effective_source": "it",
+  "expected_effective_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_source_contains": [
-    "it_support.md",
-    "VPN 连接排查"
+    "documents/trade-system.md",
+    "报关系统连接排查"
   ],
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
-  "grading_notes": "答案必须分别说明客户端版本、账号锁定、公网 IP 三个排查项，不能只给泛泛重启建议。"
+  "grading_notes": "答案必须分别说明客户端版本、申报账号锁定、出口 IP 三个排查项，不能只给泛泛重启建议。"
 }
 ```
 
@@ -27381,15 +27364,15 @@ python scripts/export_feedback_bad_cases.py --scenario enterprise_knowledge --ra
 
 ### 5.7 提升为评测样本
 
-复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/enterprise_it_troubleshooting_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
+复核完成后，先用`promote_bad_cases_to_regression.py`把这些样本合并到正式回归集，例如`eval_sets/cross_border_trade_cases.json`。`local_bad_cases.json`只是暂存草稿，不是最终长期回归集。
 
 建议按问题类型拆分文件，避免所有 Bad Case 混成一个大池子：
 
 | 文件 | 放什么样本 | 示例 |
 | --- | --- | --- |
 | `eval_sets/local_bad_cases.json` | 临时复核出的失败样本 | 最近一次评测失败项 |
-| `eval_sets/enterprise_it_troubleshooting_cases.json` | IT 排障类正式回归集 | VPN、账号锁定、工单、权限回收 |
-| `eval_sets/finance_reimbursement_cases.json` | 财务报销类正式回归集 | 发票、预算、审批、付款材料 |
+| `eval_sets/cross_border_trade_cases.json` | 贸易系统排障类正式回归集 | 报关系统、账号锁定、工单、权限回收 |
+| `eval_sets/cross_border_settlement_cases.json` | 贸易结算类正式回归集 | 发票、预算、审批、付款材料 |
 | `eval_sets/multi_turn_followup_cases.json` | 多轮追问正式回归集 | “那审批呢”“材料呢”“谁负责” |
 
 进入`eval_sets/`后，这条样本就不再只是一次线上记录，而是以后每次版本变更都要验证的质量资产。
@@ -27460,20 +27443,20 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ### 5.9 这条 Bad Case 如何影响 Gate
 
-把 VPN 示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
+把报关系统示例加入`eval_sets/local_bad_cases.json`后，下一次运行 Evaluation 时，这条样本会变成一条明确的验收用例。失败结果可以长成这样：
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
-  "query": "VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？",
+  "case_id": "cross_border_trade_system_sub_questions_001",
+  "query": "报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？",
   "expected_hit_type": "rag",
-  "expected_source": "it",
+  "expected_source": "documents",
   "expected_prompt_profile": "troubleshooting_steps",
   "expected_keywords": [
     "客户端版本",
     "账号锁定",
     "公网 IP",
-    "IT 工单",
+    "贸易系统 工单",
     "截图"
   ],
   "actual_hit_type": "rag",
@@ -27500,7 +27483,7 @@ LangSmith 不是本项目质量闭环的前置条件。它的价值在于团队�
 
 ```json
 {
-  "case_id": "enterprise_it_vpn_sub_questions_001",
+  "case_id": "cross_border_trade_system_sub_questions_001",
   "actual_hit_type": "rag",
   "actual_source_hit": true,
   "actual_prompt_profile": "troubleshooting_steps",
@@ -27712,14 +27695,14 @@ class IntentClassifierTests(unittest.TestCase):
     """验证规则候选路径的意图输出，不需要远程 LLM。"""
 
     def test_business_knowledge_question_uses_knowledge_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("新人入职流程怎么走", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("HS 编码归类流程怎么走", [], scenario)
         self.assertEqual(result.intent, "KNOWLEDGE_QUERY")
-        self.assertEqual(result.suggested_source, "hr")
+        self.assertEqual(result.suggested_source, "classification")
 
     def test_short_direct_faq_shape_prefers_faq_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("员工报销需要准备哪些材料？", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("跨境贸易报关需要准备哪些材料？", [], scenario)
         self.assertEqual(result.intent, "FAQ_QUERY")
         self.assertEqual(result.reason, "source_question_shape_rule")
         # 规则命中 → 不调用 LLM → reason 是确定性字符串
@@ -27727,41 +27710,38 @@ class IntentClassifierTests(unittest.TestCase):
 
 **关键模式**：这些纯逻辑测试验证的是**规则候选路径**，不经过远程 LLM，也不替代 BERT 模型评测。测试空历史（`[]`）触发规则判定，可以单独验证规则层；模型加载、评测和网关仲裁由第 05 章的专门测试覆盖。
 
-### 2.3 source 推断测试（跨场景）
+### 2.3 跨境贸易 source 推断测试
 
 ```python
 class ScenarioRegistryTests(unittest.TestCase):
 
-    def test_enterprise_source_patterns_are_used_for_source_inference(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        self.assertEqual(infer_source("新人入职流程怎么走", scenario), "hr")
-        self.assertEqual(infer_source("VPN 连不上怎么处理", scenario), "it")
+    def test_cross_border_source_patterns_are_used_for_source_inference(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("HS 编码归类流程怎么走", scenario), "classification")
+        self.assertEqual(infer_source("报关系统连接不上怎么处理", scenario), "documents")
 
     def test_cross_border_source_patterns_are_used(self):
         scenario = get_scenario_registry().resolve("cross_border_risk")
-        self.assertEqual(infer_source("交易对手命中制裁名单怎么办", scenario), "sanction")
-        self.assertEqual(infer_source("信用证不符点如何处理", scenario), "payment")
+        self.assertEqual(infer_source("贸易规则命中限制名单怎么办", scenario), "customs")
+        self.assertEqual(infer_source("跨境结算单证不符点如何处理", scenario), "documents")
 
-    def test_engineering_project_patterns_are_used(self):
-        scenario = get_scenario_registry().resolve("engineering_project_qa")
-        self.assertEqual(infer_source("图纸变更后旧版本还能作为施工依据吗", scenario), "drawing")
-        self.assertEqual(infer_source("隐蔽工程验收需要哪些资料", scenario), "quality")
+    def test_trade_document_patterns_are_used(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("贸易单证变更后旧版本还能作为申报依据吗", scenario), "classification")
+        self.assertEqual(infer_source("跨境贸易单证审核需要哪些资料", scenario), "documents")
 ```
 
 **关键模式**：使用`resolve(scenario_id)`加载真实场景 TOML 配置，验证 source\_patterns 的匹配逻辑。这是对"配置即代码"的测试。
 
-### 2.4 场景边界检测测试
+### 2.4 场景内 source 边界测试
 
 ```python
-def test_scenario_boundary_detects_question_from_other_business_scene(self):
-    scenario = get_scenario_registry().resolve("enterprise_knowledge")
-    # 问一个工程安全问题，但当前场景是企业知识
-    decision = detect_scenario_boundary(
-        "安全技术交底只有口头说明可以吗？", scenario
+def test_cross_border_compliance_question_routes_to_customs(self):
+    scenario = get_scenario_registry().resolve("cross_border_risk")
+    source = infer_source(
+        "出口合规说明只有口头确认可以吗？", scenario
     )
-    self.assertTrue(decision.crossed)
-    self.assertEqual(decision.matched_scenario_id, "engineering_project_qa")
-    self.assertEqual(decision.matched_source, "safety")
+    self.assertEqual(source, "customs")
 ```
 
 ### 2.5 检索过滤测试（纯逻辑）
@@ -27778,18 +27758,18 @@ class RetrievalFilterTests(unittest.TestCase):
             visibility="internal", user_role="admin"
         )
         expr = build_source_expr(
-            "billing",
+            "documents",
             kb_version="kb_v1",
             data_scope=scope,
         )
-        self.assertIn('source == "billing"', expr)
+        self.assertIn('source == "documents"', expr)
         self.assertIn('kb_version == "kb_v1"', expr)
         self.assertIn('tenant_id == "tenant_a"', expr)
         self.assertIn('array_contains(allowed_roles, "admin")', expr)
 
     def test_validate_source_filter_rejects_invalid_source(self):
         with self.assertRaises(ValueError):
-            validate_source_filter("unknown", valid_sources=["billing"])
+            validate_source_filter("unknown", valid_sources=["documents"])
 ```
 
 **关键模式**：表达式构造测试只验证字符串拼接；非法 source 的测试放在入口校验函数上。两类职责分开，读代码时不会把边界校验和底层表达式构造混在一起。
@@ -27838,9 +27818,9 @@ class PromptProfileTests(unittest.TestCase):
     def test_business_compliance_questions_use_compliance_guard(self):
         """合规类问题使用 compliance_guard, 不按普通知识问答处理。"""
         queries = [
-            "受限空间作业前需要哪些安全确认？",
-            "检验批资料和现场实物不一致怎么办？",
-            "安全技术交底只有口头说明可以吗？",
+            "出口货物放行前需要哪些合规确认？",
+            "批次申报资料和现场实物不一致怎么办？",
+            "出口合规说明只有口头确认可以吗？",
         ]
         for query in queries:
             with self.subTest(query=query):
@@ -27939,14 +27919,14 @@ def test_evaluation_gate_rejects_scenario_group_regression(self):
     report = {
         "recall_at_k": 1.0,  # 全局正常
         "rows": [
-            {"scenario_id": "enterprise_knowledge", "recall_hit": True},
-            {"scenario_id": "insurance_claims", "recall_hit": False},  # 这个场景退化
+            {"scenario_id": "cross_border_risk", "recall_hit": True},
+            {"scenario_id": "cross_border_risk", "recall_hit": False},  # 这个场景退化
         ],
     }
     result = evaluate_eval_gate(report, EvaluationGateThresholds())
     self.assertFalse(result["ok"])
     # 失败指标中包含按场景分组的退化信息
-    self.assertIn("scenario.insurance_claims.recall_at_k",
+    self.assertIn("scenario.cross_border_risk.recall_at_k",
                   {item["metric"] for item in result["failures"]})
 ```
 
@@ -28074,7 +28054,7 @@ python -m pytest tests/test_mysql_metadata_stores.py -q
 ```text
 答案不对的 5 种可能原因：
 1. 意图识别错了（本该 FAQ 直出，却走了文档 RAG）
-2. source 推断错了（该搜 HR 文档却搜了 IT 文档）
+2. source 推断错了（该搜 `customs` 关务资料却搜了 `documents` 系统资料）
 3. 检索召回了无关内容（Embedding 或 BM25 失效）
 4. 上下文构建截断了关键信息（max_context_chars 太小）
 5. LLM 生成了幻觉（Prompt 约束不够）
@@ -28205,7 +28185,7 @@ metadata = {
 
 **设计要点**：
 
-- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、薪酬信息）不应进入外部平台
+- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、结算信息）不应进入外部平台
 - **trace\_id 使用项目 UUID**——可在 LangSmith UI 中搜索`trace_id`直接定位
 - **tags**自动包含`scenario_id`和`hit_type`，支持在 LangSmith 中按场景和命中路径过滤
 - **LangSmith SDK 懒加载**——只有启用 Trace 且 API Key 存在时才导入`langsmith.run_helpers.trace`；本地没装 LangSmith 或版本不匹配时只记录 warning，不影响问答链路和本地评测
@@ -28278,7 +28258,7 @@ FAQ 快速探测的请求内候选复用还要结合以下字段判断：
 ### 3.3 一个线上排查示例
 
 ```text
-用户问题：VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+用户问题：报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 
 Trace 现象：
 - hit_type = rag
@@ -28293,16 +28273,16 @@ Trace 现象：
 再看另一种情况：
 
 ```text
-用户问题：新人入职异地办理需要哪些材料？
+用户问题：跨境贸易资料审核异地办理需要哪些材料？
 
 Trace 现象：
 - hit_type = insufficient_context
 - sources_count = 0
-- kb_version = kb_enterprise_knowledge_xxx
-- effective_source = hr
+- kb_version = kb_cross_border_risk_xxx
+- effective_source = customs
 ```
 
-这更像资料覆盖、版本或过滤条件问题。项目阶段 18负责确认 trace 证据；确认后交给项目阶段 16，把它沉淀为回归样本，标注`expected_source=hr`、`expected_hit_type=rag`、`expected_keywords=["入职材料", "劳动合同", "审批"]`。
+这更像资料覆盖、版本或过滤条件问题。项目阶段 18负责确认 trace 证据；确认后交给项目阶段 16，把它沉淀为回归样本，标注`expected_source=customs`、`expected_hit_type=rag`、`expected_keywords=["报关材料", "贸易合同", "审批"]`。
 
 ### 3.4 与项目阶段 16的分工
 
@@ -28344,7 +28324,7 @@ Pipeline 结束时（qa_core/pipeline/rag.py）
 
 ### 5.1 生产部署拓扑
 
-本项目当前适合中小规模知识库和企业内部门户场景，推荐的最小生产拓扑如下：
+本项目当前适合中小规模知识库和跨境贸易业务门户场景，推荐的最小生产拓扑如下：
 
 ```mermaid
 flowchart LR
@@ -28558,7 +28538,7 @@ hey -n 1000 -c 20 http://192.168.88.100:8001/health
 ```text
 hey -n 200 -c 10 -m POST \
   -H "Content-Type: application/json" \
-  -d '{"query":"新人入职需要完成哪些流程？","scenario_id":"enterprise_knowledge"}' \
+  -d '{"query":"跨境贸易资料审核需要完成哪些流程？","scenario_id":"cross_border_risk"}' \
   http://192.168.88.100:8001/api/retrieval/debug
 ```
 
@@ -28572,8 +28552,8 @@ import websockets
 
 URL = "ws://192.168.88.100:8001/api/stream"
 PAYLOAD = {
-    "question": "新人入职需要完成哪些流程？",
-    "scenario_id": "enterprise_knowledge",
+    "question": "跨境贸易资料审核需要完成哪些流程？",
+    "scenario_id": "cross_border_risk",
 }
 
 async def one_user(i: int):
@@ -28656,7 +28636,7 @@ docker logs -f knowforge-api
 如果 Milvus schema 或入库逻辑变化，必须先重建知识库。已有知识库只更新资料内容时不加`--reset-collections`；只有旧 collection schema 不兼容时才删除 collection 重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ### 5.8 生产事故排查案例
@@ -28687,11 +28667,11 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
 
 ### 5.9 可选扩展边界
 
-当前版本先把企业级多场景 RAG 主链路做稳。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
+当前版本先把跨境贸易 RAG 主链路做稳，同时保留场景注册与隔离扩展能力。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
 
 | 版本 | 建议范围 | 说明 |
 | --- | --- | --- |
-| 一期 | 多场景 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可讲、可跑、可验收 |
+| 一期 | 跨境贸易 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可运行、可验证、可交付 |
 | 可选扩展 | 轻量 GraphRAG、OCR/VLM 入库增强、自动评测集扩展 | 作为企业项目亮点，不影响现有 RAG 主链路 |
 | 暂不主推 | 完整视觉聊天、强依赖 Neo4j 的重图谱平台 | 成本和不可控性较高，容易冲淡主线 |
 
@@ -28800,14 +28780,14 @@ class IntentClassifierTests(unittest.TestCase):
     """验证规则候选路径的意图输出，不需要远程 LLM。"""
 
     def test_business_knowledge_question_uses_knowledge_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("新人入职流程怎么走", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("HS 编码归类流程怎么走", [], scenario)
         self.assertEqual(result.intent, "KNOWLEDGE_QUERY")
-        self.assertEqual(result.suggested_source, "hr")
+        self.assertEqual(result.suggested_source, "classification")
 
     def test_short_direct_faq_shape_prefers_faq_intent(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        result = classify_intent("员工报销需要准备哪些材料？", [], scenario)
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        result = classify_intent("跨境贸易报关需要准备哪些材料？", [], scenario)
         self.assertEqual(result.intent, "FAQ_QUERY")
         self.assertEqual(result.reason, "source_question_shape_rule")
         # 规则命中 → 不调用 LLM → reason 是确定性字符串
@@ -28815,41 +28795,38 @@ class IntentClassifierTests(unittest.TestCase):
 
 **关键模式**：这些纯逻辑测试验证的是**规则候选路径**，不经过远程 LLM，也不替代 BERT 模型评测。测试空历史（`[]`）触发规则判定，可以单独验证规则层；模型加载、评测和网关仲裁由第 05 章的专门测试覆盖。
 
-### 2.3 source 推断测试（跨场景）
+### 2.3 跨境贸易 source 推断测试
 
 ```python
 class ScenarioRegistryTests(unittest.TestCase):
 
-    def test_enterprise_source_patterns_are_used_for_source_inference(self):
-        scenario = get_scenario_registry().resolve("enterprise_knowledge")
-        self.assertEqual(infer_source("新人入职流程怎么走", scenario), "hr")
-        self.assertEqual(infer_source("VPN 连不上怎么处理", scenario), "it")
+    def test_cross_border_source_patterns_are_used_for_source_inference(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("HS 编码归类流程怎么走", scenario), "classification")
+        self.assertEqual(infer_source("报关系统连接不上怎么处理", scenario), "documents")
 
     def test_cross_border_source_patterns_are_used(self):
         scenario = get_scenario_registry().resolve("cross_border_risk")
-        self.assertEqual(infer_source("交易对手命中制裁名单怎么办", scenario), "sanction")
-        self.assertEqual(infer_source("信用证不符点如何处理", scenario), "payment")
+        self.assertEqual(infer_source("贸易规则命中限制名单怎么办", scenario), "customs")
+        self.assertEqual(infer_source("跨境结算单证不符点如何处理", scenario), "documents")
 
-    def test_engineering_project_patterns_are_used(self):
-        scenario = get_scenario_registry().resolve("engineering_project_qa")
-        self.assertEqual(infer_source("图纸变更后旧版本还能作为施工依据吗", scenario), "drawing")
-        self.assertEqual(infer_source("隐蔽工程验收需要哪些资料", scenario), "quality")
+    def test_trade_document_patterns_are_used(self):
+        scenario = get_scenario_registry().resolve("cross_border_risk")
+        self.assertEqual(infer_source("贸易单证变更后旧版本还能作为申报依据吗", scenario), "classification")
+        self.assertEqual(infer_source("跨境贸易单证审核需要哪些资料", scenario), "documents")
 ```
 
 **关键模式**：使用`resolve(scenario_id)`加载真实场景 TOML 配置，验证 source\_patterns 的匹配逻辑。这是对"配置即代码"的测试。
 
-### 2.4 场景边界检测测试
+### 2.4 场景内 source 边界测试
 
 ```python
-def test_scenario_boundary_detects_question_from_other_business_scene(self):
-    scenario = get_scenario_registry().resolve("enterprise_knowledge")
-    # 问一个工程安全问题，但当前场景是企业知识
-    decision = detect_scenario_boundary(
-        "安全技术交底只有口头说明可以吗？", scenario
+def test_cross_border_compliance_question_routes_to_customs(self):
+    scenario = get_scenario_registry().resolve("cross_border_risk")
+    source = infer_source(
+        "出口合规说明只有口头确认可以吗？", scenario
     )
-    self.assertTrue(decision.crossed)
-    self.assertEqual(decision.matched_scenario_id, "engineering_project_qa")
-    self.assertEqual(decision.matched_source, "safety")
+    self.assertEqual(source, "customs")
 ```
 
 ### 2.5 检索过滤测试（纯逻辑）
@@ -28866,18 +28843,18 @@ class RetrievalFilterTests(unittest.TestCase):
             visibility="internal", user_role="admin"
         )
         expr = build_source_expr(
-            "billing",
+            "documents",
             kb_version="kb_v1",
             data_scope=scope,
         )
-        self.assertIn('source == "billing"', expr)
+        self.assertIn('source == "documents"', expr)
         self.assertIn('kb_version == "kb_v1"', expr)
         self.assertIn('tenant_id == "tenant_a"', expr)
         self.assertIn('array_contains(allowed_roles, "admin")', expr)
 
     def test_validate_source_filter_rejects_invalid_source(self):
         with self.assertRaises(ValueError):
-            validate_source_filter("unknown", valid_sources=["billing"])
+            validate_source_filter("unknown", valid_sources=["documents"])
 ```
 
 **关键模式**：表达式构造测试只验证字符串拼接；非法 source 的测试放在入口校验函数上。两类职责分开，读代码时不会把边界校验和底层表达式构造混在一起。
@@ -28926,9 +28903,9 @@ class PromptProfileTests(unittest.TestCase):
     def test_business_compliance_questions_use_compliance_guard(self):
         """合规类问题使用 compliance_guard, 不按普通知识问答处理。"""
         queries = [
-            "受限空间作业前需要哪些安全确认？",
-            "检验批资料和现场实物不一致怎么办？",
-            "安全技术交底只有口头说明可以吗？",
+            "出口货物放行前需要哪些合规确认？",
+            "批次申报资料和现场实物不一致怎么办？",
+            "出口合规说明只有口头确认可以吗？",
         ]
         for query in queries:
             with self.subTest(query=query):
@@ -29027,14 +29004,14 @@ def test_evaluation_gate_rejects_scenario_group_regression(self):
     report = {
         "recall_at_k": 1.0,  # 全局正常
         "rows": [
-            {"scenario_id": "enterprise_knowledge", "recall_hit": True},
-            {"scenario_id": "insurance_claims", "recall_hit": False},  # 这个场景退化
+            {"scenario_id": "cross_border_risk", "recall_hit": True},
+            {"scenario_id": "cross_border_risk", "recall_hit": False},  # 这个场景退化
         ],
     }
     result = evaluate_eval_gate(report, EvaluationGateThresholds())
     self.assertFalse(result["ok"])
     # 失败指标中包含按场景分组的退化信息
-    self.assertIn("scenario.insurance_claims.recall_at_k",
+    self.assertIn("scenario.cross_border_risk.recall_at_k",
                   {item["metric"] for item in result["failures"]})
 ```
 
@@ -29408,7 +29385,7 @@ INTENT_MODEL_PATH=./models/bert_intent_classifier_v1
 | 宿主机目录 | 容器目录 | 用途 |
 | --- | --- | --- |
 | `./models` | `/app/models` | 本地 Embedding / Reranker 模型 |
-| `./scenarios` | `/app/scenarios` | 8 个业务场景资料 |
+| `./scenarios` | `/app/scenarios` | 跨境贸易业务场景资料 |
 | `./reports` | `/app/reports` | 入库、评测、验收报告 |
 | `./logs` | `/app/logs` | 应用日志 |
 | `./site` | `/app/site` | MkDocs 构建后的项目文档站点 |
@@ -29452,7 +29429,7 @@ docker compose --env-file .env.compose down
 
 ```text
 APP_ENV=dev
-ACTIVE_SCENARIO_ID=enterprise_knowledge
+ACTIVE_SCENARIO_ID=cross_border_risk
 API_PORT=8000
 ENV_FILE=.env.compose
 
@@ -29535,13 +29512,13 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose ps
 ```
 ```
-5.3初始化8个业务场景
+5.3初始化跨境贸易业务场景
 ```
 
-首次部署建议重建全部场景：
+首次部署建议重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init all scenarios"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init cross-border trade"
 ```
 
 这条命令会在 API 容器里执行入库脚本，使用容器内的：
@@ -29571,22 +29548,22 @@ docker compose --env-file .env.compose logs --tail 80 api
 5.5单场景更新
 ```
 
-只更新一个场景时，不需要重建全部 8 个场景：
+只更新一个场景时，不需要重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 如果只是日常资料变更，推荐使用引用式增量版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 只有在 Milvus collection schema 不兼容、BM25 Function 字段变化或需要清空重建时，才使用：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ---
@@ -29638,7 +29615,7 @@ python scripts/deploy/verify_fresh_docker_deploy.py --evaluation-limit 3 --perfo
 2. 启动 mysql / redis / etcd / minio / milvus
 3. 检查或构建基础镜像
 4. 构建 api 镜像
-5. 初始化全部 8 个业务场景
+5. 初始化跨境贸易业务场景
 6. 启动 api
 7. 执行项目发布验收：评测门禁 + 性能门禁 + Docker 集成检查
 8. 执行 API 冒烟和缓存冒烟
@@ -29683,7 +29660,7 @@ python scripts/verify_v1_release.py --include-evaluation --include-performance -
 | Python 编译 | 主项目和测试文件语法正确 |
 | 项目文档构建 | `mkdocs build --strict`通过 |
 | 章节实践代码对齐 | `codealong`与主项目关键文件一致 |
-| 项目守护规则 | 关键边界、依赖、冻结场景符合约束 |
+| 项目守护规则 | 关键边界、依赖、当前跨境贸易场景符合约束 |
 | Compose config | Docker Compose 配置可解析 |
 | 主链路评测 | `--include-evaluation --include-docker`会在 api 容器里生成评测报告、执行评测门禁并导出 Bad Case 候选 |
 | 性能门禁 | `--include-performance --include-docker`会在 api 容器里采集首 token、总耗时、阶段耗时并执行性能门禁 |
@@ -29790,7 +29767,7 @@ Windows Docker Desktop 一般不会遇到同样的 ownership 问题。
 确认 active 版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('enterprise_knowledge'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
+docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('cross_border_risk'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
 ```
 ```
 8.6修改代码后页面还是旧效果
@@ -29873,7 +29850,7 @@ Docker 交付前按下面顺序检查：
 ```text
 答案不对的 5 种可能原因：
 1. 意图识别错了（本该 FAQ 直出，却走了文档 RAG）
-2. source 推断错了（该搜 HR 文档却搜了 IT 文档）
+2. source 推断错了（该搜 `customs` 关务资料却搜了 `documents` 系统资料）
 3. 检索召回了无关内容（Embedding 或 BM25 失效）
 4. 上下文构建截断了关键信息（max_context_chars 太小）
 5. LLM 生成了幻觉（Prompt 约束不够）
@@ -30004,7 +29981,7 @@ metadata = {
 
 **设计要点**：
 
-- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、薪酬信息）不应进入外部平台
+- **metadata 不存完整 prompt/上下文**——敏感资料（合同条款、结算信息）不应进入外部平台
 - **trace\_id 使用项目 UUID**——可在 LangSmith UI 中搜索`trace_id`直接定位
 - **tags**自动包含`scenario_id`和`hit_type`，支持在 LangSmith 中按场景和命中路径过滤
 - **LangSmith SDK 懒加载**——只有启用 Trace 且 API Key 存在时才导入`langsmith.run_helpers.trace`；本地没装 LangSmith 或版本不匹配时只记录 warning，不影响问答链路和本地评测
@@ -30077,7 +30054,7 @@ FAQ 快速探测的请求内候选复用还要结合以下字段判断：
 ### 3.3 一个线上排查示例
 
 ```text
-用户问题：VPN 客户端版本、账号锁定、公网 IP 这些排查项分别应该怎么处理？
+用户问题：报关系统客户端版本、申报账号锁定、出口 IP 这些排查项分别应该怎么处理？
 
 Trace 现象：
 - hit_type = rag
@@ -30092,16 +30069,16 @@ Trace 现象：
 再看另一种情况：
 
 ```text
-用户问题：新人入职异地办理需要哪些材料？
+用户问题：跨境贸易资料审核异地办理需要哪些材料？
 
 Trace 现象：
 - hit_type = insufficient_context
 - sources_count = 0
-- kb_version = kb_enterprise_knowledge_xxx
-- effective_source = hr
+- kb_version = kb_cross_border_risk_xxx
+- effective_source = customs
 ```
 
-这更像资料覆盖、版本或过滤条件问题。项目阶段 19负责确认 trace 证据；确认后交给项目阶段 17，把它沉淀为回归样本，标注`expected_source=hr`、`expected_hit_type=rag`、`expected_keywords=["入职材料", "劳动合同", "审批"]`。
+这更像资料覆盖、版本或过滤条件问题。项目阶段 19负责确认 trace 证据；确认后交给项目阶段 17，把它沉淀为回归样本，标注`expected_source=customs`、`expected_hit_type=rag`、`expected_keywords=["报关材料", "贸易合同", "审批"]`。
 
 ### 3.4 与项目阶段 17的分工
 
@@ -30143,7 +30120,7 @@ Pipeline 结束时（qa_core/pipeline/rag.py）
 
 ### 5.1 生产部署拓扑
 
-本项目当前适合中小规模知识库和企业内部门户场景，推荐的最小生产拓扑如下：
+本项目当前适合中小规模知识库和跨境贸易业务门户场景，推荐的最小生产拓扑如下：
 
 ```mermaid
 flowchart LR
@@ -30245,7 +30222,7 @@ hey -n 1000 -c 20 http://192.168.88.100:8001/health
 ```text
 hey -n 200 -c 10 -m POST \
   -H "Content-Type: application/json" \
-  -d '{"query":"新人入职需要完成哪些流程？","scenario_id":"enterprise_knowledge"}' \
+  -d '{"query":"跨境贸易资料审核需要完成哪些流程？","scenario_id":"cross_border_risk"}' \
   http://192.168.88.100:8001/api/retrieval/debug
 ```
 
@@ -30259,8 +30236,8 @@ import websockets
 
 URL = "ws://192.168.88.100:8001/api/stream"
 PAYLOAD = {
-    "question": "新人入职需要完成哪些流程？",
-    "scenario_id": "enterprise_knowledge",
+    "question": "跨境贸易资料审核需要完成哪些流程？",
+    "scenario_id": "cross_border_risk",
 }
 
 async def one_user(i: int):
@@ -30343,7 +30320,7 @@ docker logs -f knowforge-api
 如果 Milvus schema 或入库逻辑变化，必须先重建知识库。已有知识库只更新资料内容时不加`--reset-collections`；只有旧 collection schema 不兼容时才删除 collection 重建：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ### 5.8 生产事故排查案例
@@ -30374,11 +30351,11 @@ docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_ve
 
 ### 5.9 可选扩展边界
 
-当前版本先把企业级多场景 RAG 主链路做稳。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
+当前版本先把跨境贸易 RAG 主链路做稳，同时保留场景注册与隔离扩展能力。扩展能力不要一次性塞进主线，建议采用“主线必做 + 亮点选做”的边界。
 
 | 版本 | 建议范围 | 说明 |
 | --- | --- | --- |
-| 一期 | 多场景 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可讲、可跑、可验收 |
+| 一期 | 跨境贸易 RAG、Milvus Hybrid、Reranker、版本、隔离、质量门禁、Trace、生产部署 | 当前项目主线，保证可运行、可验证、可交付 |
 | 可选扩展 | 轻量 GraphRAG、OCR/VLM 入库增强、自动评测集扩展 | 作为企业项目亮点，不影响现有 RAG 主链路 |
 | 暂不主推 | 完整视觉聊天、强依赖 Neo4j 的重图谱平台 | 成本和不可控性较高，容易冲淡主线 |
 
@@ -30670,7 +30647,7 @@ INTENT_MODEL_PATH=./models/bert_intent_classifier_v1
 | 宿主机目录 | 容器目录 | 用途 |
 | --- | --- | --- |
 | `./models` | `/app/models` | 本地 Embedding / Reranker 模型 |
-| `./scenarios` | `/app/scenarios` | 8 个业务场景资料 |
+| `./scenarios` | `/app/scenarios` | 跨境贸易业务场景资料 |
 | `./reports` | `/app/reports` | 入库、评测、验收报告 |
 | `./logs` | `/app/logs` | 应用日志 |
 | `./site` | `/app/site` | MkDocs 构建后的项目文档站点 |
@@ -30714,7 +30691,7 @@ docker compose --env-file .env.compose down
 
 ```text
 APP_ENV=dev
-ACTIVE_SCENARIO_ID=enterprise_knowledge
+ACTIVE_SCENARIO_ID=cross_border_risk
 API_PORT=8000
 ENV_FILE=.env.compose
 
@@ -30793,12 +30770,12 @@ docker compose --env-file .env.compose build api
 docker compose --env-file .env.compose ps
 ```
 
-### 5.3 初始化 8 个业务场景
+### 5.3 初始化跨境贸易业务场景
 
-首次部署建议重建全部场景：
+首次部署建议重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init all scenarios"
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_scenarios.py --reset-collections --description "docker init cross-border trade"
 ```
 
 这条命令会在 API 容器里执行入库脚本，使用容器内的：
@@ -30825,22 +30802,22 @@ docker compose --env-file .env.compose logs --tail 80 api
 
 ### 5.5 单场景更新
 
-只更新一个场景时，不需要重建全部 8 个场景：
+只更新一个场景时，不需要重建当前跨境贸易场景：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --quality-gate --activate
 ```
 
 如果只是日常资料变更，推荐使用引用式增量版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 只有在 Milvus collection schema 不兼容、BM25 Function 字段变化或需要清空重建时，才使用：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --force --reset-collections --quality-gate --activate
+docker compose --env-file .env.compose run --rm api python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --force --reset-collections --quality-gate --activate
 ```
 
 ---
@@ -30892,7 +30869,7 @@ python scripts/deploy/verify_fresh_docker_deploy.py --evaluation-limit 3 --perfo
 2. 启动 mysql / redis / etcd / minio / milvus
 3. 检查或构建基础镜像
 4. 构建 api 镜像
-5. 初始化全部 8 个业务场景
+5. 初始化跨境贸易业务场景
 6. 启动 api
 7. 执行 V1 发布验收：评测门禁 + 性能门禁 + Docker 集成检查
 8. 执行 API 冒烟和缓存冒烟
@@ -30933,7 +30910,7 @@ python scripts/verify_v1_release.py --include-evaluation --include-performance -
 | Python 编译 | 主项目和测试文件语法正确 |
 | 项目文档构建 | `mkdocs build --strict`通过 |
 | 章节实践代码对齐 | `codealong`与主项目关键文件一致 |
-| 项目守护规则 | 关键边界、依赖、冻结场景符合约束 |
+| 项目守护规则 | 关键边界、依赖、当前跨境贸易场景符合约束 |
 | Compose config | Docker Compose 配置可解析 |
 | 主链路评测 | `--include-evaluation --include-docker`会在 api 容器里生成评测报告、执行评测门禁并导出 Bad Case 候选 |
 | 性能门禁 | `--include-performance --include-docker`会在 api 容器里采集首 token、总耗时、阶段耗时并执行性能门禁 |
@@ -31031,7 +31008,7 @@ Windows Docker Desktop 一般不会遇到同样的 ownership 问题。
 确认 active 版本：
 
 ```bash
-docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('enterprise_knowledge'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
+docker compose --env-file .env.compose run --rm api python -c "from qa_core.scenarios.registry import resolve_scenario; from qa_core.governance.kb_versions import get_kb_version_store; sc=resolve_scenario('cross_border_risk'); print(get_kb_version_store(sc.scenario_id).resolve_active_version())"
 ```
 
 ### 8.6 修改代码后页面还是旧效果
@@ -31156,7 +31133,7 @@ class RetrievalDebugRequest(BaseModel):
 当 FastAPI 收到一个 JSON 请求体时：
 
 ```json
-{"query": "入职流程", "tenant_id": 123}
+{"query": "HS 编码归类流程", "tenant_id": 123}
 ```
 
 Pydantic 会自动校验：
@@ -31207,7 +31184,7 @@ class RetrievalDebugRequest(BaseModel):
 
 # JSON 请求
 {
-    "query": "入职流程",
+    "query": "HS 编码归类流程",
     "data_scope": {
         "tenant_id": "company_a",
         "dataset_id": "production"
@@ -31281,7 +31258,7 @@ model = ChatOpenAI(...).with_structured_output(QueryVariants)
 decision = model.invoke([...])  # 返回 QueryVariants 对象
 
 # 不是返回一段自由文本
-# 而是返回 QueryVariants(variants=["入职流程", "新人入职步骤", ...])
+# 而是返回 QueryVariants(variants=["HS 编码归类流程", "跨境贸易资料审核步骤", ...])
 ```
 
 **工作原理**：LangChain 将 Pydantic 模型的 JSON Schema 嵌入 System Prompt，告诉 LLM 按这些字段回答。LLM 返回的 JSON 会被 Pydantic 自动校验；如果字段类型或数量不符合约束，就会报错。
@@ -31322,9 +31299,9 @@ decision = model.invoke([...])  # 返回 QueryVariants 对象
 输出：64 个十六进制字符（256 bits）
 
 例如：
-"入职流程包括..."        → a1b2c3d4e5f6789...（64字符）
-"入职流程包括..."（完全相同）→ a1b2c3d4e5f6789...（完全相同的64字符）
-"入职流程包含..."（一个字符不同）→ 8f3e9a2b1c7d456...（完全不同的64字符）
+"HS 编码归类流程包括..."        → a1b2c3d4e5f6789...（64字符）
+"HS 编码归类流程包括..."（完全相同）→ a1b2c3d4e5f6789...（完全相同的64字符）
+"HS 编码归类流程包含..."（一个字符不同）→ 8f3e9a2b1c7d456...（完全不同的64字符）
 ```
 
 核心特性：
@@ -31370,7 +31347,7 @@ def file_fingerprint(file_path: str | Path) -> str:
 
 ```mermaid
 flowchart TD
-    File["📄 文件<br/>data/hr_data/入职流程.pdf"] --> Read["分块读取<br/>SHA256 哈希"]
+    File["📄 文件<br/>data/classification_data/HS 编码归类流程.pdf"] --> Read["分块读取<br/>SHA256 哈希"]
 
     Read --> Hash["指纹：a1b2c3d4e5f6789..."]
 
@@ -31394,13 +31371,13 @@ flowchart TD
 
 ```text
 第一次入库：
-  hr_data/入职流程.pdf → SHA256: a1b2c3... → 写入 Milvus → Manifest: {fingerprint: "a1b2c3...", chunk_ids: [...]}
+  classification_data/HS 编码归类流程.pdf → SHA256: a1b2c3... → 写入 Milvus → Manifest: {fingerprint: "a1b2c3...", chunk_ids: [...]}
 
 第二次入库（文件未改）：
-  hr_data/入职流程.pdf → SHA256: a1b2c3... → Manifest 中相同 → 跳过 ✅
+  classification_data/HS 编码归类流程.pdf → SHA256: a1b2c3... → Manifest 中相同 → 跳过 ✅
 
 第三次入库（文件改了）：
-  hr_data/入职流程.pdf → SHA256: 8f3e9a... → Manifest 中不同 → 删除旧 chunk_ids → 重新入库 → 更新 Manifest
+  classification_data/HS 编码归类流程.pdf → SHA256: 8f3e9a... → Manifest 中不同 → 删除旧 chunk_ids → 重新入库 → 更新 Manifest
 ```
 
 ## 五、为什么不用文件修改时间
@@ -31631,19 +31608,19 @@ CrossEncoder 将问题和文档**联合输入**，让模型同时看到两者，
 ### 一个具体例子
 
 ```text
-用户问题："安全技术交底只有口头说明可以吗？"
+用户问题："出口合规说明只有口头确认可以吗？"
 
 向量检索召回的前 5 条：
-1. 文档A：安全技术交底制度（相似度 0.87）  ← 相关
+1. 文档A：出口合规说明制度（相似度 0.87）  ← 相关
 2. 文档B：口头变更管理规范（相似度 0.83）  ← 可能不相关
-3. 文档C：施工安全管理制度（相似度 0.81）  ← 太泛
-4. 文档D：安全技术交底常见问题 FAQ（相似度 0.79） ← 实际上最相关！
+3. 文档C：出口物流合规制度（相似度 0.81）  ← 太泛
+4. 文档D：出口合规说明常见问题 FAQ（相似度 0.79） ← 实际上最相关！
 5. 文档E：项目部安全职责分工（相似度 0.77） ← 不相关
 
 Reranker 重排后：
-1. 文档D：安全技术交底常见问题 FAQ（相关性 0.94） ← 提到最前面
-2. 文档A：安全技术交底制度（相关性 0.91）
-3. 文档C：施工安全管理制度（相关性 0.62） ← 分数大幅降低
+1. 文档D：出口合规说明常见问题 FAQ（相关性 0.94） ← 提到最前面
+2. 文档A：出口合规说明制度（相关性 0.91）
+3. 文档C：出口物流合规制度（相关性 0.62） ← 分数大幅降低
 4. 文档B：口头变更管理规范（相关性 0.45）
 5. 文档E：项目部安全职责分工（相关性 0.31）
 ```
@@ -31656,8 +31633,8 @@ Reranker 重排后：
 flowchart TD
     subgraph BiEncoder["Bi-Encoder（双塔模型）"]
         direction TB
-        BE_Q["问题文本<br/>'入职需要什么材料'"]
-        BE_D["文档文本<br/>'入职流程包括...'"]
+        BE_Q["问题文本<br/>'报关需要什么材料'"]
+        BE_D["文档文本<br/>'HS 编码归类流程包括...'"]
         BE_EncQ["Encoder<br/>独立编码问题"]
         BE_EncD["Encoder<br/>独立编码文档"]
         BE_VecQ["向量 q"]
@@ -31855,19 +31832,19 @@ Reranker 不是万能的。以下场景即使 rerank 也可能失效：
 
 ```text
 # 朴素定长切分（chunk_size=100）
-text = "入职流程包括以下步骤：1. 提交入职材料（身份证复印件、学历证书、离职证明）。2. 签订劳动合同和保密协议。3. 部门负责人审批。"
+text = "HS 编码归类流程包括以下步骤：1. 提交报关材料（商业发票、装箱单、原产地证）。2. 核对贸易合同和合规声明。3. 关务负责人审核。"
 chunks = [text[i:i+100] for i in range(0, len(text), 100)]
 
 # 结果：
-# chunk1: "入职流程包括以下步骤：1. 提交入职材料（身份证复印件、学历证书、离职证明）。2. 签订劳动"
-#            ↑ 在第100个字符处截断，切断了"劳动合同"这个词
-# chunk2: "合同和保密协议。3. 部门负责人审批。"
+# chunk1: "HS 编码归类流程包括以下步骤：1. 提交报关材料（商业发票、装箱单、原产地证）。2. 签订贸易"
+#            ↑ 在第100个字符处截断，切断了"贸易合同"这个词
+# chunk2: "合同和保密协议。3. 关务负责人审核。"
 #            ↑ 孤立的半句话
 ```
 
 问题：
 - 句子被从中间切断，语义不完整
-- LLM 看到"签订劳动"和"合同和保密协议"两个碎片，不如看到一个完整的"签订劳动合同和保密协议"
+- LLM 看到"签订贸易"和"合同和保密协议"两个碎片，不如看到一个完整的"核对贸易合同和合规声明"
 
 ## 二、递归细分切分算法
 
@@ -31918,22 +31895,22 @@ flowchart TD
 假设有如下文本（chunk\_size=200）：
 
 ```text
-入职流程包括以下步骤：
+HS 编码归类流程包括以下步骤：
 
-1. 提交入职材料。新员工需携带身份证复印件、
-学历证书原件、离职证明和近六个月体检报告。
-HR部门会在1个工作日内完成材料审核。
+1. 提交报关材料。申报主体需携带商品资料复印件、
+原产地证原件、贸易合同和近六个月报关授权记录。
+关务团队会在1个工作日内完成材料审核。
 
-2. 签订劳动合同和保密协议。合同期限根据
-岗位级别确定，一般为3年。
+2. 核对贸易合同和合规声明。合同期限根据
+货物类别确定，一般为3年。
 ```
 
 **第一轮：尝试`\n\n`（段落）**
 
 ```text
-段落1: "入职流程包括以下步骤：" → 长度 12 ✅
-段落2: "1. 提交入职材料。新员工需携带身份证复印件、\n学历证书原件、离职证明和近六个月体检报告。\nHR部门会在1个工作日内完成材料审核。" → 长度 85 ✅  
-段落3: "2. 签订劳动合同和保密协议。合同期限根据\n岗位级别确定，一般为3年。" → 长度 35 ✅
+段落1: "HS 编码归类流程包括以下步骤：" → 长度 12 ✅
+段落2: "1. 提交报关材料。申报主体需携带商品资料复印件、\n原产地证原件、贸易合同和近六个月报关授权记录。\n关务团队会在1个工作日内完成材料审核。" → 长度 85 ✅
+段落3: "2. 核对贸易合同和合规声明。合同期限根据\n货物类别确定，一般为3年。" → 长度 35 ✅
 ```
 
 全部在 200 以内 → 完成！三个按段落划分的 chunk，语义边界完美。
@@ -31942,9 +31919,9 @@ HR部门会在1个工作日内完成材料审核。
 
 ```text
 段落2 长度 85 > 50 → 继续用 '\n' 切分
-  行1: "1. 提交入职材料。新员工需携带身份证复印件、" → 25 ✅
-  行2: "学历证书原件、离职证明和近六个月体检报告。" → 21 ✅
-  行3: "HR部门会在1个工作日内完成材料审核。" → 18 ✅
+  行1: "1. 提交报关材料。申报主体需携带商品资料复印件、" → 25 ✅
+  行2: "原产地证原件、贸易合同和近六个月报关授权记录。" → 21 ✅
+  行3: "关务团队会在1个工作日内完成材料审核。" → 18 ✅
 全部在 50 以内 → 完成！
 ```
 
@@ -32003,18 +31980,18 @@ markdown_headers = [("#", "h1"), ("##", "h2"), ("###", "h3")]
 header_splitter = MarkdownHeaderTextSplitter(headers_to_split_on=markdown_headers)
 
 # 输入：
-# # 入职管理
-# ## 入职流程
-# 入职需要提交以下材料...
-# ## 转正流程
-# 试用期结束后...
+# # 跨境贸易资料管理
+# ## HS 编码归类流程
+# 报关需要提交以下材料...
+# ## 单证放行流程
+# 单证审核完成后...
 
 # 输出：
-# Document(page_content="入职需要提交以下材料...", metadata={"h1": "入职管理", "h2": "入职流程"})
-# Document(page_content="试用期结束后...", metadata={"h1": "入职管理", "h2": "转正流程"})
+# Document(page_content="报关需要提交以下材料...", metadata={"h1": "跨境贸易资料管理", "h2": "HS 编码归类流程"})
+# Document(page_content="单证审核完成后...", metadata={"h1": "跨境贸易资料管理", "h2": "单证放行流程"})
 ```
 
-这使得后续 LLM 生成的答案可以引用"来源：入职管理 > 入职流程"这样的层级结构。
+这使得后续 LLM 生成的答案可以引用"来源：跨境贸易资料管理 > HS 编码归类流程"这样的层级结构。
 
 ## 六、表格文件的特殊保护
 
@@ -32072,7 +32049,7 @@ if content_type.startswith("table"):
 
 ```mermaid
 flowchart LR
-    Text["输入文本<br/>'入职流程有哪些步骤'"] --> Tokenizer["① Tokenization<br/>分词 + 映射到词汇表 ID"]
+    Text["输入文本<br/>'HS 编码归类流程有哪些步骤'"] --> Tokenizer["① Tokenization<br/>分词 + 映射到词汇表 ID"]
 
     Tokenizer --> Tokens["Token IDs<br/>[101, 2769, 689, 3175, ...]"]
     Tokens --> Embed["② Token Embedding<br/>查表：每个 ID → 初始向量<br/>(1024维)"]
@@ -32097,10 +32074,10 @@ from transformers import AutoTokenizer
 
 tokenizer = AutoTokenizer.from_pretrained("BAAI/bge-m3")
 
-text = "入职流程有哪些步骤"
+text = "HS 编码归类流程有哪些步骤"
 tokens = tokenizer.tokenize(text)
 print(tokens)
-# ['▁入职', '▁流程', '▁有', '▁哪些', '▁步骤']
+# ['▁报关', '▁流程', '▁有', '▁哪些', '▁步骤']
 
 input_ids = tokenizer.encode(text)
 print(input_ids)
@@ -32119,12 +32096,12 @@ Tokenization 的本质：把自然语言文本映射为词汇表中的整数 ID�
 
 token_embeddings = embedding_table[input_ids]
 # token_embeddings[0] = [CLS] 的初始向量
-# token_embeddings[1] = '入职' 的初始向量
+# token_embeddings[1] = '报关' 的初始向量
 # token_embeddings[2] = '流程' 的初始向量
 # ...
 ```
 
-这一步得到的向量还**没有上下文信息**——"入职"这个词在"入职流程"和"离职后入职新公司"中，初始向量是完全一样的。需要通过下一步 Transformer 来注入上下文。
+这一步得到的向量还**没有上下文信息**——“报关”这个词在“HS 编码归类流程”和“更换贸易主体后的海关备案”中，初始向量是完全一样的。需要通过下一步 Transformer 来注入上下文。
 
 ### 1.3 第三步：Transformer 编码（核心）
 
@@ -32144,7 +32121,7 @@ flowchart TD
 
     Dots --> L12["Layer 12: 最终输出<br/>每个 token 的上下文向量"]
 
-    L12 --> Context["'入职' 的向量现在包含了<br/>'流程'、'步骤' 等上下文信息<br/>与 '入职新公司' 中的 '入职' 不同了"]
+    L12 --> Context["'报关' 的向量现在包含了<br/>'流程'、'步骤' 等上下文信息<br/>与 '更换贸易主体' 中的 '报关' 不同了"]
 
     style Input fill:#EFF6FF,stroke:#3B82F6
     style L1 fill:#FFFBEB,stroke:#D97706
@@ -32152,7 +32129,7 @@ flowchart TD
     style Context fill:#ECFDF5,stroke:#059669,stroke-width:3px
 ```
 
-**Self-Attention 的核心思想**：对于每个 token，计算它与其他所有 token 的"相关性分数"。比如处理"入职"时，模型发现"流程"和"步骤"与它高度相关，于是把它们的语义信息加权融合到"入职"的向量中。
+**Self-Attention 的核心思想**：对于每个 token，计算它与其他所有 token 的"相关性分数"。比如处理"报关"时，模型发现"流程"和"步骤"与它高度相关，于是把它们的语义信息加权融合到"报关"的向量中。
 
 ### 1.4 第四步：Pooling（关键选择）
 
@@ -32162,7 +32139,7 @@ Transformer 输出的是**每个 token 的向量**（7 个），但我们需要�
 flowchart TD
     subgraph Tokens["Transformer 输出：7 个 token 向量"]
         CLS["[CLS] → v0<br/>句子级表示"]
-        T1["入职 → v1"]
+        T1["报关 → v1"]
         T2["流程 → v2"]
         T3["有 → v3"]
         T4["哪些 → v4"]
@@ -32264,7 +32241,7 @@ flowchart TD
 
 **右路（可用 API）：OpenAI text-embedding-3**
 
-如果数据可以发送到外部服务，OpenAI 的 Embedding API 是最省事的方案——不需要下载模型、不需要 GPU、按 token 计费、多语言效果好。适合海外项目或对数据出境不敏感的团队。但本项目的场景是企业内部知识库（制度、流程、合同、合规），数据不能随意发送给第三方，所以这条路不适用。
+如果数据可以发送到外部服务，OpenAI 的 Embedding API 是最省事的方案——不需要下载模型、不需要 GPU、按 token 计费、多语言效果好。适合海外项目或对数据出境不敏感的团队。但本项目的场景是跨境贸易知识库（制度、流程、合同、合规），数据不能随意发送给第三方，所以这条路不适用。
 
 **左路（必须本地部署）：进入中文场景判断**
 
@@ -32287,8 +32264,8 @@ BGE-M3 支持**8192 token**的输入，可以一次性编码很长的 chunk。�
 
 ```text
 # 两个语义相同的句子，但长度不同
-query = "入职"
-doc = "入职流程包含以下步骤：1. 提交个人材料 2. 签订劳动合同 3. 办理社保"
+query = "报关"
+doc = "HS 编码归类流程包含以下步骤：1. 提交商品与贸易资料 2. 签订贸易合同 3. 完成海关申报"
 
 # Mean Pooling 后：
 # query 的向量长度较大（token 少，平均值波动大）
@@ -32393,7 +32370,7 @@ def get_embeddings() -> HuggingFaceEmbeddings:
   总计：约 10-30 秒
 
 后续调用（已缓存）：
-  └─ encode("入职流程")                           → 50-200ms
+  └─ encode("HS 编码归类流程")                           → 50-200ms
 ```
 
 这就是为什么项目在`warmup_runtime()`中启动并等待`warmup_retrieval_stack()`：预热阶段会绕过 query Redis 缓存完成一次真实 encode。只有 BGE、Reranker 和 Milvus Collection 都进入`ready`，服务才开始接收问答请求，因此第一个用户不会承担这段模型加载和设备初始化延迟。
@@ -32440,12 +32417,12 @@ LLM 的上下文窗口虽然越来越大（qwen-plus 支持 32K token），但�
 ```mermaid
 flowchart TD
     subgraph TooBig["Chunk 太大（2000字符）"]
-        TB1["❌ 检索精度低<br/>整篇入职制度同时命中<br/>但用户只想要'提交材料'那一小段"]
+        TB1["❌ 检索精度低<br/>整篇报关制度同时命中<br/>但用户只想要'提交材料'那一小段"]
         TB2["❌ 包含太多无关内容<br/>回答时模型可能引用<br/>chunk 中的无关段落"]
     end
 
     subgraph TooSmall["Chunk 太小（150字符）"]
-        TS1["❌ 语义不完整<br/>'入职需要以下材料：'<br/>（列表在下一个chunk里）"]
+        TS1["❌ 语义不完整<br/>'报关需要以下材料：'<br/>（列表在下一个chunk里）"]
         TS2["❌ LLM 看到碎片化的信息<br/>无法理解完整上下文"]
     end
 
@@ -32464,9 +32441,9 @@ flowchart TD
 
 **这张图用一个直观的对比回答了一个核心问题：为什么不能简单地把文档按固定长度一刀切？**
 
-**Chunk 太大（2000 字符）的问题**：检索时整篇入职制度被当做一个结果返回，但用户只关心"提交材料"这一小段。向量相似度算的是整个 chunk 和问题的匹配程度——chunk 中 90% 无关内容会"稀释"向量，导致相似度分数不准。更严重的是，LLM 拿到这个 2000 字符的 chunk 后，可能引用其中的无关段落来回答，产生"看起来有关但其实不对"的幻觉。
+**Chunk 太大（2000 字符）的问题**：检索时整篇报关制度被当做一个结果返回，但用户只关心"提交材料"这一小段。向量相似度算的是整个 chunk 和问题的匹配程度——chunk 中 90% 无关内容会"稀释"向量，导致相似度分数不准。更严重的是，LLM 拿到这个 2000 字符的 chunk 后，可能引用其中的无关段落来回答，产生"看起来有关但其实不对"的幻觉。
 
-**Chunk 太小（150 字符）的问题**：语义信息被切断。"入职需要以下材料："这一句以冒号结尾，但材料列表在下一个 chunk 里。检索到这个小 chunk 后，LLM 只能看到半句话，后面的关键信息完全丢失。碎片化的 chunk 还会导致"每个 chunk 的语义都差不多"——向量空间中的区分度降低，检索精度反而更差。
+**Chunk 太小（150 字符）的问题**：语义信息被切断。"报关需要以下材料："这一句以冒号结尾，但材料列表在下一个 chunk 里。检索到这个小 chunk 后，LLM 只能看到半句话，后面的关键信息完全丢失。碎片化的 chunk 还会导致"每个 chunk 的语义都差不多"——向量空间中的区分度降低，检索精度反而更差。
 
 **Parent-Child（本项目的方案）**：核心思路是**检索用小块，生成用大块**。Child chunk（350 字符）粒度细、语义聚焦，检索时精确定位到"提交材料"这一段；Parent chunk（1000 字符）包含完整上下文，LLM 生成时能看到前后的语义关联。两个 chunk 通过`parent_id`关联——Milvus 中存的是 Child 的向量和文本，但 metadata 中携带了完整的 Parent 内容。检索命中 Child 后，构建上下文时取的是 Parent。
 
@@ -32478,20 +32455,20 @@ flowchart TD
 
 ```mermaid
 flowchart TD
-    Doc["📄 原始文档<br/>入职流程.md（5000 字符）"]
+    Doc["📄 原始文档<br/>HS 编码归类流程.md（5000 字符）"]
 
     Doc --> ParentSplit["① Parent Splitter<br/>chunk_size=1000, overlap=100<br/>按段落 + 句子边界切"]
 
-    ParentSplit --> P1["Parent Chunk 1<br/>'## 入职流程概述<br/>入职流程是指...'<br/>1000 字符"]
-    ParentSplit --> P2["Parent Chunk 2<br/>'## 入职所需材料<br/>1. 身份证原件...'<br/>1000 字符"]
-    ParentSplit --> P3["Parent Chunk 3<br/>'## 入职当天流程<br/>报到时间...'<br/>1000 字符"]
+    ParentSplit --> P1["Parent Chunk 1<br/>'## HS 编码归类流程概述<br/>HS 编码归类流程是指...'<br/>1000 字符"]
+    ParentSplit --> P2["Parent Chunk 2<br/>'## 报关所需材料<br/>1. 商品资料原件...'<br/>1000 字符"]
+    ParentSplit --> P3["Parent Chunk 3<br/>'## 申报前流程<br/>申报时间...'<br/>1000 字符"]
 
     P1 --> ChildSplit["② Child Splitter<br/>对每个 Parent 再做切分<br/>chunk_size=350, overlap=50"]
 
-    ChildSplit --> C1["Child 1.1<br/>'入职流程概述...'<br/>350字符 · parent_id=P1"]
+    ChildSplit --> C1["Child 1.1<br/>'HS 编码归类流程概述...'<br/>350字符 · parent_id=P1"]
     ChildSplit --> C2["Child 1.2<br/>'流程包含以下环节...'<br/>350字符 · parent_id=P1"]
-    ChildSplit --> C3["Child 2.1<br/>'入职所需材料...'<br/>350字符 · parent_id=P2"]
-    ChildSplit --> C4["Child 2.2<br/>'2. 学历证书...'<br/>350字符 · parent_id=P2"]
+    ChildSplit --> C3["Child 2.1<br/>'报关所需材料...'<br/>350字符 · parent_id=P2"]
+    ChildSplit --> C4["Child 2.2<br/>'2. 原产地证...'<br/>350字符 · parent_id=P2"]
 
     C1 --> Milvus["③ 存入 Milvus<br/>page_content = Child 文本<br/>metadata.parent_content = Parent 全文"]
     C2 --> Milvus
@@ -32513,19 +32490,19 @@ sequenceDiagram
     participant Milvus as Milvus
     participant LLM as LLM
 
-    User->>Pipeline: "入职需要准备哪些材料"
+    User->>Pipeline: "报关需要准备哪些材料"
 
     Pipeline->>Milvus: 用 Child Chunk 做向量检索
     Note over Milvus: 搜索 Child 文本<br/>（350字符 · 精确匹配）
 
-    Milvus-->>Pipeline: 命中 Child 2.1<br/>"入职所需材料..."（score 0.92）
+    Milvus-->>Pipeline: 命中 Child 2.1<br/>"报关所需材料..."（score 0.92）
 
     Pipeline->>Pipeline: 从 metadata 读取 parent_content
     Note over Pipeline: 展开为完整的 Parent Chunk 2<br/>（1000字符 · 包含完整材料列表）
 
-    Pipeline->>LLM: System: ...<br/>Context: [1] 来源：入职流程.md<br/>## 入职所需材料<br/>1. 身份证原件及复印件<br/>2. 学历证书复印件<br/>3. 离职证明<br/>4. 体检报告<br/>5. 银行卡信息<br/>...
+    Pipeline->>LLM: System: ...<br/>Context: [1] 来源：HS 编码归类流程.md<br/>## 报关所需材料<br/>1. 商业发票与装箱单<br/>2. 原产地证复印件<br/>3. 贸易合同<br/>4. 报关委托书<br/>5. 收款账户信息<br/>...
 
-    LLM-->>Pipeline: 入职需要准备以下材料：<br/>1. 身份证原件及复印件...
+    LLM-->>Pipeline: 报关需要准备以下材料：<br/>1. 商业发票与装箱单...
 ```
 
 **关键设计**：
@@ -32664,7 +32641,7 @@ def select_context_docs(faq_hits, doc_hits, plan):
 Parent 给 LLM 看，决定了答案的上下文完整度。
 
 太小（500 字符）：
-  → LLM 看到碎片："入职需要以下材料：1. 身份证"（列表断了）
+  → LLM 看到碎片："报关需要以下材料：1. 商品资料"（列表断了）
   → 回答不完整
 
 太大（2000 字符）：
@@ -32672,8 +32649,8 @@ Parent 给 LLM 看，决定了答案的上下文完整度。
   → 消耗 token 额度，可能稀释关键信息
 
 1000 字符 ≈ 500 中文字 ≈ 适合一个完整小节的长度：
-  → "## 入职所需材料" + 5 个要点的完整描述
-  → "## VPN 故障排查" + 4 个步骤的完整说明
+  → "## 报关所需材料" + 5 个要点的完整描述
+  → "## 报关系统 故障排查" + 4 个步骤的完整说明
 ```
 
 ### 3.2 Child Size：为什么是 350
@@ -32700,14 +32677,14 @@ Child 给 Milvus 检索，决定了检索精度。
 ```mermaid
 flowchart LR
     subgraph NoOverlap["无 Overlap"]
-        C1["Chunk 1<br/>...验收资料包括：<br/>1. 质量验收报告<br/>2. 隐蔽工程验收记录"]
-        C2["Chunk 2<br/>3. 材料检测报告<br/>4. 功能性试验报告"]
-        Gap["❌ '验收资料'的列表<br/>被切断在两个 Chunk<br/>第一个 Chunk 信息不完整"]
+        C1["Chunk 1<br/>...审核资料包括：<br/>1. 单证审核报告<br/>2. 单证审核记录"]
+        C2["Chunk 2<br/>3. 商品资料核验报告<br/>4. 系统申报测试报告"]
+        Gap["❌ '审核资料'的列表<br/>被切断在两个 Chunk<br/>第一个 Chunk 信息不完整"]
     end
 
     subgraph WithOverlap["有 Overlap（50字符）"]
-        D1["Chunk 1<br/>...验收资料包括：<br/>1. 质量验收报告<br/>2. 隐蔽工程验收记录<br/>3. 材料检测报告"]
-        D2["Chunk 2<br/>2. 隐蔽工程验收记录<br/>3. 材料检测报告<br/>4. 功能性试验报告"]
+        D1["Chunk 1<br/>...审核资料包括：<br/>1. 单证审核报告<br/>2. 单证审核记录<br/>3. 商品资料核验报告"]
+        D2["Chunk 2<br/>2. 单证审核记录<br/>3. 商品资料核验报告<br/>4. 系统申报测试报告"]
         Good["✅ 列表在两个 Chunk 中<br/>都保持完整<br/>检索时不会漏掉"]
     end
 
@@ -32792,15 +32769,15 @@ child_overlap: int = 50
 本项目的分隔符列表：`["\n\n", "\n", "。", "！", "？", "；", "，", " ", ""]`
 
 ```text
-以 "入职流程包含以下步骤：1. 提交材料 2. 签订合同 3. 办理社保" 为例：
+以 "HS 编码归类流程包含以下步骤：1. 提交材料 2. 签订合同 3. 完成海关申报" 为例：
 
 1. 先尝试用 \n\n（段落）切 → 没找到
 2. 用 \n（换行）切 → 没找到
 3. 用 。（句子）切 → 没找到（这段没有句号）
 4. 用 ，（短语）切 → 找到了：
-   "入职流程包含以下步骤：1. 提交材料"
+   "HS 编码归类流程包含以下步骤：1. 提交材料"
    "2. 签订合同"
-   "3. 办理社保"
+   "3. 完成海关申报"
 ```
 
 这个策略保证了**切分点优先落在自然的语义边界上**（段落 > 句子 > 短语），只有当前面的分隔符切完后某块仍超过限制时，才继续使用更细粒度的分隔符。
@@ -32811,22 +32788,22 @@ child_overlap: int = 50
 
 ```text
 ✅ 好的 Child Chunk（350字符）：
-"## 入职所需材料
+"## 报关所需材料
 
-入职当天需要携带以下材料：
-1. 身份证原件及复印件（正反面）
-2. 学历证书复印件（最高学历）
-3. 离职证明（上一家公司的正式离职文件）
-4. 近三个月的一寸免冠照片 2 张
-5. 本人名下的银行卡（用于工资发放）"
+申报前需要携带以下材料：
+1. 商业发票与装箱单（正反面）
+2. 原产地证复印件（有效版本）
+3. 贸易合同（上一版单证的作废记录）
+4. 近三个月的报关授权记录片 2 张
+5. 收款账户信息（用于跨境结算）"
 → 主题明确、信息完整、有标题层级
 
 
 ❌ 差的 Child Chunk（350字符）：
-"2. 学历证书复印件（最高学历）
-3. 离职证明（上一家公司的正式离职文件）
-4. 近三个月的一寸免冠照"
-→ 开头被切断、没有标题、不知道这是入职还是报销的材料
+"2. 原产地证复印件（有效版本）
+3. 贸易合同（上一版单证的作废记录）
+4. 近三个月的报关授权记录"
+→ 开头被切断、没有标题、不知道这是报关还是贸易结算的材料
 ```
 
 ### 6.2 项目内置的质量检查
@@ -32968,7 +32945,7 @@ def stable_hash(*parts: object) -> str:
     关键特性：相同输入永远产生相同输出（确定性）。
     用于生成 chunk_id、faq_id、parent_id 等 Milvus 主键。
 
-    例: stable_hash("hr_v2", "/data/入职流程.md", "chunk_3") 
+    例: stable_hash("classification_v2", "/data/HS 编码归类流程.md", "chunk_3")
         → 'a1b2c3d4e5f6...' (64 位 hex)
     """
     raw = "||".join("" if part is None else str(part) for part in parts)
@@ -32989,8 +32966,8 @@ def file_fingerprint(path: str | Path) -> str:
 def normalize_source_from_path(path: str | Path) -> str:
     """从 '<source>_data' 目录名提取 source 标识。
 
-    例: 'scenarios/enterprise_knowledge/data/hr_data' → 'hr'
-        'data/legal_data' → 'legal'
+    例: 'scenarios/cross_border_risk/data/customs_data' → 'customs'
+        'data/documents_data' → 'documents'
     """
     name = os.path.basename(str(path)).replace("_data", "")
     return name or "default"
@@ -33117,7 +33094,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=False)
 
     # ── 场景 ──
-    active_scenario_id: str = Field(default="enterprise_knowledge", ...)
+    active_scenario_id: str = Field(default="cross_border_risk", ...)
     scenario_config_dir: str = Field(default="scenarios", ...)
 
     # ── Milvus ──
@@ -33251,7 +33228,7 @@ class _MySqlStore:
 | P0 基础与实践 | 01、02、03、04、实践单元 | 首轮必须掌握，能用 AI 完成一条混合检索 RAG 闭环。 |
 | P0 主链路 | 05、06、07、08、09、10 | 首轮必须掌握，能讲清企业级在线问答闭环。 |
 | P1 核心工程能力 | 11、12、13、14、15 | 第二阶段掌握，能讲清应用入口、Web 异步、治理发布、RAG 质量和接口验收。 |
-| P2 企业化增强 | 16、17、多场景、可选 LangSmith Trace、本地 Evaluation、生产部署、容量评估、企业 overlay、资料治理 | 项目亮点，体现企业级项目经验。 |
+| P2 企业化增强 | 16、17、场景配置扩展能力、可选 LangSmith Trace、本地 Evaluation、生产部署、容量评估、企业 overlay、资料治理 | 项目亮点，体现企业级项目经验。 |
 | P3 扩展方向 | OCR/VLM、GraphRAG、LlamaIndex 入库替代 | 知道边界和规划即可，不放进首轮主线。 |
 
 详细拆分见下方[开发总览](#course-overview)表格。
@@ -33300,7 +33277,7 @@ flowchart LR
     style Phase4 fill:#F5F3FF,stroke:#7C3AED,stroke-width:2px
 ```
 
-**路线图的设计逻辑**：先学习 RAG、LangChain 和 Milvus 基础，再在第二阶段实践单元中用 Vibe Coding 把 Dense + BM25 + Reranker + LLM 串起来；后续 05-10 再逐层拆解企业级意图、检索计划、改写、编排、在线 Pipeline 和 Prompt 生成。项目主线遵循“基础概念 → 框架基础 → 核心链路 → Web 基础设施 → 治理发布 → 质量验收 → 生产交付”的递进。
+**路线图的设计逻辑**：先学习 RAG、LangChain 和 Milvus 基础，再在第二阶段实践单元中用 Vibe Coding 把 Dense + BM25 + Reranker + LLM 串起来；后续 05-10 再逐层拆解企业级意图、检索计划、改写、编排、在线 Pipeline 和 Prompt 生成。项目主线遵循“基础概念 → 框架基础 → 核心链路 → Web 基础设施 → 治理发布 → 单证审核 → 生产交付”的递进。
 
 > **源码编号说明**：原有实现目录仍保留 13-19 的编号，分别承载版本、隔离、入库、质量、测试、观测和 Docker 的代码切片。项目文档把这些代码切片重新组织成 13-17 五个学习单元，不要求为了项目重排而移动或重命名源码目录。
 
@@ -33343,7 +33320,7 @@ flowchart LR
 | 16 | LangSmith Trace、阶段耗时、线上排查、压测、容量评估和高并发扩展 | 版本/隔离/入库实现、离线评测、Docker 构建细节 | 原 18 |
 | 17 | Docker 交付、镜像构建、模型挂载、容器命令、部署验收和排障 | 项目阶段 01的基础环境概念；Kubernetes、滚动发布、多副本自动扩缩容和灾备演练 | 原 19 |
 
-**P3 扩展方向**：当前主链路不接入 GraphRAG、OCR/VLM 和 LlamaIndex 入库替代，避免干扰 RAG 基础链路。GraphRAG 可以作为独立关系推理能力，专门处理合同风险、跨境供应链、工程项目等强实体关系场景；OCR/VLM 用于复杂资料入库增强；LlamaIndex 只作为文档加载、transformations 和缓存的替代方案理解，不替代本项目的多版本治理、DataScope 和线上检索主链路。
+**P3 扩展方向**：当前主链路不接入 GraphRAG、OCR/VLM 和 LlamaIndex 入库替代，避免干扰 RAG 基础链路。GraphRAG 可以作为独立关系推理能力，专门处理跨境贸易合同风险、供应链关系和贸易主体关联等强实体关系问题；OCR/VLM 用于复杂资料入库增强；LlamaIndex 只作为文档加载、transformations 和缓存的替代方案理解，不替代本项目的多版本治理、DataScope 和线上检索主链路。
 
 **学习路径**：
 
@@ -33378,7 +33355,7 @@ flowchart LR
 | 12 | 应用入口与环境前置校验 | P1 | 理解 preflight check 设计模式，读懂 app.py |
 | 13 | 知识库多版本管理 | P1 | 掌握版本状态机、激活/回滚、版本对比 |
 | 14 | 数据隔离与多租户 | P1 | 理解 tenant/dataset/visibility/role 四维隔离 |
-| 15 | 文档入库与索引链路 | P1 | 掌握 8 场景全量初始化、知识库构建总链路、文档加载、FAQ 入库、资料治理边界 |
+| 15 | 文档入库与索引链路 | P1 | 掌握跨境贸易场景全量初始化、知识库构建总链路、文档加载、FAQ 入库、资料治理边界 |
 | 16 | RAG 回归验收与入库质量 | P1 | 理解入库质量、本地 Evaluation、Bad Case 沉淀和验收机制 |
 | 17 | 测试与接口验收 | P1 | 理解测试金字塔、纯逻辑测试设计、验收测试 |
 | 18 | LangSmith 观测、Trace 与生产化部署 | P2 | 掌握 LangSmith Trace、业务 metadata、阶段耗时诊断、生产部署和容量评估 |
@@ -33398,7 +33375,7 @@ flowchart LR
 
 #### 项目阶段 01：项目概述与 Docker 环境搭建
 
-- **内容**：什么是 RAG、RAG 系统的基本组成、向量和向量检索的直观理解、Docker/Compose 基础、8 个业务场景介绍、技术架构总览、环境搭建与验证
+- **内容**：什么是 RAG、RAG 系统的基本组成、向量和向量检索的直观理解、Docker/Compose 基础、跨境贸易业务场景介绍、技术架构总览、环境搭建与验证
 - **学完后**：能启动项目，在页面上完成一次完整问答
 - **关键代码**：`docker-compose.yml`、`.env.compose`/`.env`
 
@@ -33436,7 +33413,7 @@ flowchart LR
 #### 项目阶段 07：查询改写与变体生成
 
 - **内容**：追问改写（代词消解）、query variants 生成（启发式+LLM）、多轮对话历史管理、历史摘要压缩
-- **学完后**：理解"审批呢"如何变成"入职审批流程需要多长时间"
+- **学完后**：理解"审批呢"如何变成"报关审批流程需要多长时间"
 - **关键代码**：`qa_core/pipeline/rewrite.py`、`qa_core/pipeline/query_variants.py`
 
 #### 项目阶段 08：Milvus 混合检索
@@ -33681,7 +33658,7 @@ data_scope = resolve_data_scope(
 
 ### 验证实践
 
-如果要给`enterprise_knowledge`增加一个新 source：`legal`，你需要检查哪些地方？
+如果要给`cross_border_risk`增加一个新 source：`legal`，你需要检查哪些地方？
 
 ### 阶段总结
 
@@ -33820,7 +33797,7 @@ kb_version = version.kb_version
 `kb_version`是人可读的版本 ID，例如：
 
 ```text
-kb_enterprise_knowledge_20260806_055203_9ed89890
+kb_cross_border_risk_20260806_055203_9ed89890
 ```
 
 `version_seq`是机器做区间判断的单调序号，例如：
@@ -33844,7 +33821,7 @@ kb_enterprise_knowledge_20260806_055203_9ed89890
 当前场景没有 active 版本，执行：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge
+python scripts/rebuild_kb_version.py --scenario cross_border_risk
 ```
 
 问题：
@@ -33918,7 +33895,7 @@ if args.incremental_from:
 当前 active 是`kb_v1`。执行：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active
 ```
 
 问题：
@@ -34024,7 +34001,7 @@ Document(
 
 ```text
 question,answer,source
-报销超过5000元需要谁审批？,需要部门负责人和财务负责人审批。,finance
+贸易结算超过5000元需要谁审批？,需要部门负责人和结算负责人审批。,documents
 ```
 
 回答：
@@ -34364,7 +34341,7 @@ and (valid_to_seq == 0 or valid_to_seq > active_seq)
   "faq_document_conflicts": {
     "conflict_count": 0
   },
-  "kb_version": "kb_enterprise_knowledge_xxx",
+  "kb_version": "kb_cross_border_risk_xxx",
   "embedding_model_version": "bge-m3-local-v1",
   "chunk_schema_version": "parent_child_validity_v2"
 }
@@ -34443,7 +34420,7 @@ print(
 阅读下面输出：
 
 ```text
-Rebuilt knowledge base version: kb_v2, faq_records=24, doc_chunks=180, activated=False, incremental_base=kb_v1, quality_report=reports/ingestion/enterprise_knowledge/xxx.json
+Rebuilt knowledge base version: kb_v2, faq_records=24, doc_chunks=180, activated=False, incremental_base=kb_v1, quality_report=reports/ingestion/cross_border_risk/xxx.json
 ```
 
 回答：
@@ -34464,12 +34441,12 @@ Rebuilt knowledge base version: kb_v2, faq_records=24, doc_chunks=180, activated
 
 ```bash
 python scripts/rebuild_kb_version.py \
-  --scenario enterprise_knowledge \
+  --scenario cross_border_risk \
   --new-version \
   --incremental-from active \
   --quality-gate \
   --activate \
-  --description "finance policy incremental update"
+  --description "cross-border settlement policy incremental update"
 ```
 
 ### 执行过程
@@ -34477,7 +34454,7 @@ python scripts/rebuild_kb_version.py \
 | 顺序 | 动作 |
 | --- | --- |
 | 启动校验 | 解析参数，确认增量模式和激活模式合法 |
-| 第 1 步 | 解析`enterprise_knowledge`场景配置，并初始化 MySQL schema |
+| 第 1 步 | 解析`cross_border_risk`场景配置，并初始化 MySQL schema |
 | 第 2 步 | 没有传`--reset-collections`时跳过 collection 删除 |
 | 第 3 步 | 创建新的 STAGED 版本`kb_v2`，分配新的`version_seq` |
 | 第 4 步 | 把当前 active 版本解析为增量基准`kb_v1` |
@@ -34541,7 +34518,7 @@ python scripts/rebuild_kb_version.py \
 用自己的话复述这条命令的 8 个代码阶段：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --quality-gate --activate
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --quality-gate --activate
 ```
 
 复述中必须出现以下关键词：
@@ -34557,7 +34534,7 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 
 ### 验证实践 2：文档分支判断
 
-给出一个文件`expense.md`：
+给出一个文件`documents/settlement.md`：
 
 - 在`kb_v1`已经入库。
 - 当前构建`kb_v2`。
@@ -34672,10 +34649,10 @@ validate_args(parser, args)
 判断下面命令是否合法：
 
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --activate --skip-quality-report
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --activate --skip-quality-report
 ```
 ```bash
-python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-version --incremental-from active --force
+python scripts/rebuild_kb_version.py --scenario cross_border_risk --new-version --incremental-from active --force
 ```
 
 参考答案：
@@ -34691,7 +34668,7 @@ python scripts/rebuild_kb_version.py --scenario enterprise_knowledge --new-versi
 
 ## 八、最终小结
 
-离线入库链路真正解决的不是“怎么把文件切成 chunk”，而是“企业知识如何安全发布”。
+离线入库链路真正解决的不是“怎么把文件切成 chunk”，而是“跨境贸易知识如何安全发布”。
 
 这条链路按代码可以拆成 8 个阶段：先确定场景和控制面，再按需重置数据面，随后创建 STAGED 版本、解析增量基准、重建 FAQ、入库文档、执行质量门禁并激活，最后输出摘要。
 
